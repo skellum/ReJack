@@ -227,3 +227,23 @@ by the 0x34/0x39/0x3C values InitTjHardware writes). "No Line" after init580 the
 boost not switching (Q7 gate drive), a failed/dry electrolytic (C38; C39 footprint empty), or talk battery present
 but below the VTech's threshold. Next: TS53 PRO for line voltage; **5 V logic probe on Q7's gate** (pulses = boost
 being driven); then C38 voltage. GIO0/GIO1 changing even when idle may be the boost PWM/feedback.
+
+## GVJackApp v2 (Windows, 2013) — 2026-11-17
+Third-party Google Voice app that rang A921 dongles. Inno Setup 5.5.6 installer (sha256 `6d8534ff…3270b`, kept in
+`images/vendor/gvjack/`, not committed), unpacked with innoextract. `GVJackApp.exe` (x86, MFC) drives the TigerJet
+**directly over HID feature reports** — no TigerJet DLL. Logs `PhoneJack:SerialNumberFound` (our board's name).
+Other bundled DLLs (`Dongle_Hw/Ut` = ProSLIC "ATA" dongles, `CM_HID*`, `BT_EX`, `YLUSBTEL`) serve other vendors.
+
+- Register write (fcn 0x41082f): 33-byte feature report `00 04 <reg> <reg> 01 <val>`; read (0x410915): SET
+  `00 04 00 <reg> 00`, GET, value at `[reg]` — same framing as ours. A second 65-byte variant (`20 …`) is used when a
+  device flag (+0x984) is set (later chip).
+- Per-VID switch: `0x06E6` = TigerJet. (`0x40=0x44` ring / `0x40=0x12` idle is the **0x183D** vendor, not ours.)
+- **Init, TigerJet branch (0x415aec):** `01=E1, 01=59, 55=80, 39=A0, 3C=25`, RingOff (`3D=00`), `32=1C, 33=79`
+  (unconditional), **no re-lock**. A subset of CTj580 InitTjHardware — no 0x4E, 0x34, 0x2F.
+- **Ring:** on `3D=30`, off `3D=00` (65-byte devices: reg `00=03`/`00=00` instead).
+- **Hook:** reg `0x58 & 0x02` (same as mj_dev). 65-byte devices: reg `0x18 & 0x80`.
+- **DTMF (new):** reg `0x15`: bit 6 = digit present, low nibble = code (`0xB` checked specially; MT8870-style
+  1–9, A=0, B=*, C=#). 65-byte devices use reg `0x17`. → chip decodes DTMF; Rejack can use it.
+- **Conclusion:** GVJack does nothing to enable line power either. Two independent drivers (magicJack, GVJack)
+  agree that talk battery is not a software switch on this board → if the line reads 0 V after init, suspect the
+  booster hardware (Q7 drive, C38, D8, L4). `tjprobe gvinit` replays GVJack's exact sequence for completeness.
