@@ -2,9 +2,10 @@
  * @file rejack.c  Rejack — magicJack A921 FXS port as a baresip phone.
  *
  * baresip "application" module that turns the analog phone on the dongle into the user interface:
- *   - hook / keypad events from hidraw          -> call state machine (phone.c)
- *   - call-progress tones (dial, ringback, busy) -> baresip player on the dongle's ALSA device
- *   - ring cadence                               -> tjdev_ring() (Phase 3: not implemented yet)
+ *   - hook (reg 0x58) + DTMF (reg 0x15), polled  -> call state machine (phone.c)
+ *   - dial tone                                  -> chip tone generator (reg 0x34), or software
+ *   - other call-progress tones (ringback, busy) -> baresip player on the dongle's ALSA device
+ *   - ring cadence                               -> tjdev_ring() (reg 0x3D)
  *   - SIP events (incoming, ringing, answered)   -> state machine
  *
  * Load it INSTEAD of menu.so (menu also answers calls and plays ring tones).
@@ -25,6 +26,7 @@
   rejack_record_dir  /var/lib/rejack/recordings
   rejack_record_dev  hw:TigerJet,0     # capture device for the fallback recording
   rejack_dtmf        inband            # inband | send  (send = also signal digits to the far end)
+  rejack_dialtone    hw                # hw (chip generator, default) | sw (baresip player)
  \endverbatim
  *
  * 911 policy (PROJECT.md): "allow" (default) always attempts 911. Every 911 runs the emergency hook
@@ -52,6 +54,7 @@ extern char **environ;
 #define RING_ON_MS   2000
 #define RING_OFF_MS  4000
 #define TONE_SRATE   8000
+#define POLL_MS      20      /* hook/DTMF register poll */
 
 struct rejack {
 	struct tjdev  *dev;
@@ -65,7 +68,10 @@ struct rejack {
 	struct play   *play;         /* current call-progress tone */
 	struct ua     *ua;           /* UA of the current call */
 	struct call   *call;         /* current call, or NULL */
-	struct tj_input last;        /* previous input report, for edge detection */
+	struct tmr     tmr_poll;     /* hook/DTMF register poll */
+	bool           poll_warned;
+	bool           hw_dialtone;  /* dial tone from the chip (rejack_dialtone hw) */
+	bool           hw_dt_on;
 
 	char hid[64];
 	char audio_mod[32];
@@ -95,8 +101,20 @@ static void op_tone(enum ph_tone tone, void *arg)
 	(void)arg;
 
 	rj.play = mem_deref(rj.play);
+	if (rj.hw_dt_on && tone != TONE_DIAL) {
+		(void)tjdev_dialtone(rj.dev, false);
+		rj.hw_dt_on = false;
+	}
 	if (tone == TONE_NONE)
 		return;
+	if (tone == TONE_DIAL && rj.hw_dialtone) {
+		int e = tjdev_dialtone(rj.dev, true);
+		if (!e) {
+			rj.hw_dt_on = true;
+			return;
+		}
+		warning("rejack: hardware dial tone failed (%m), using software\n", -e);
+	}
 
 	if (tone_gen(tone, TONE_SRATE, &pcm, &n)) {
 		warning("rejack: tone_gen(%d) failed\n", tone);
@@ -130,7 +148,7 @@ static void ring_tick(void *arg)
 	rj.ring_phase = !rj.ring_phase;
 	err = tjdev_ring(rj.dev, rj.ring_phase);
 	if (err && !rj.ring_warned) {
-		warning("rejack: hardware ring not available (%m) — see RING.md\n", -err);
+		warning("rejack: ring register write failed (%m)\n", -err);
 		rj.ring_warned = true;
 	}
 	tmr_start(&rj.tmr_ring, rj.ring_phase ? RING_ON_MS : RING_OFF_MS, ring_tick, NULL);
@@ -421,6 +439,9 @@ static void feed(enum ph_event ev, char digit)
 		     phone_event_str(ev), phone_state_str(rj.ph.st));
 }
 
+/* The interrupt report's keypad field belongs to TigerJet's USB handsets; for an analog phone the
+ * line state comes from registers (poll_tick). Drain reports so the fd doesn't stay readable, and use
+ * the fd to notice an unplug. */
 static void hid_handler(int flags, void *arg)
 {
 	struct tj_input in;
@@ -432,18 +453,42 @@ static void hid_handler(int flags, void *arg)
 		rj.fhs = fd_close(rj.fhs);
 		return;
 	}
-
-	while ((r = tjdev_read_input(rj.dev, &in)) > 0) {
-		if (in.offhook != rj.last.offhook)
-			feed(in.offhook ? EV_OFFHOOK : EV_ONHOOK, 0);
-		if (in.key && in.key != rj.last.key)      /* key-down edge */
-			feed(EV_DIGIT, in.key);
-		rj.last = in;
-	}
+	while ((r = tjdev_read_input(rj.dev, &in)) > 0)
+		;
 	if (r < 0) {
 		warning("rejack: hidraw read error (%m)\n", -r);
 		rj.fhs = fd_close(rj.fhs);
 	}
+}
+
+static void poll_tick(void *arg)
+{
+	struct tj_line ln;
+	int err;
+	(void)arg;
+
+	err = tjdev_poll(rj.dev, &ln);
+	if (err) {
+		if (!rj.poll_warned)
+			warning("rejack: register poll failed (%m)\n", -err);
+		rj.poll_warned = true;
+		tmr_start(&rj.tmr_poll, 1000, poll_tick, NULL);   /* back off */
+		return;
+	}
+	if (rj.poll_warned) {
+		info("rejack: register poll recovered\n");
+		rj.poll_warned = false;
+	}
+	if (ln.hook_changed)
+		feed(ln.offhook ? EV_OFFHOOK : EV_ONHOOK, 0);
+	if (ln.digit) {
+		if (rj.hw_dt_on) {           /* the chip doesn't cut forced dial tone itself */
+			(void)tjdev_dialtone(rj.dev, false);
+			rj.hw_dt_on = false;
+		}
+		feed(EV_DIGIT, ln.digit);
+	}
+	tmr_start(&rj.tmr_poll, POLL_MS, poll_tick, NULL);
 }
 
 
@@ -562,10 +607,12 @@ static void load_config(struct ph_config *pc)
 	(void)conf_get_u32(conf, "rejack_e911_max_age", &rj.e911_max_age_h);
 
 	v[0] = '\0';
+	rj.hw_dialtone = !(!conf_get_str(conf, "rejack_dialtone", v, sizeof(v)) && !strcmp(v, "sw"));
+	v[0] = '\0';
 	rj.send_dtmf = !conf_get_str(conf, "rejack_dtmf", v, sizeof(v)) && !strcmp(v, "send");
 
-	info("rejack: hid=%s tones=%s,%s 911=%s dtmf=%s\n", rj.hid, rj.audio_mod,
-	     rj.audio_dev,
+	info("rejack: hid=%s tones=%s,%s dialtone=%s 911=%s dtmf=%s\n", rj.hid, rj.audio_mod,
+	     rj.audio_dev, rj.hw_dialtone ? "hw" : "sw",
 	     pc->e911 == E911_BLOCK ? "block" : pc->e911 == E911_ALLOW ? "allow" : "verified",
 	     rj.send_dtmf ? "send" : "inband");
 	if (!rj.emerg_hook[0])
@@ -582,6 +629,7 @@ static int module_init(void)
 	memset(&rj, 0, sizeof(rj));
 	tmr_init(&rj.tmr_phone);
 	tmr_init(&rj.tmr_ring);
+	tmr_init(&rj.tmr_poll);
 	load_config(&pc);
 	phone_init(&rj.ph, &pc, &ops, NULL);
 
@@ -595,9 +643,10 @@ static int module_init(void)
 	}
 	info("rejack: using %s\n", tjdev_path(rj.dev));
 
-	err = tjdev_line_power(rj.dev, true);
+	err = tjdev_setup(rj.dev);       /* we own dial tone and ring from here on */
 	if (err)
-		warning("rejack: line power control not available (%m) — see RING.md\n", -err);
+		warning("rejack: line setup failed (%m)\n", -err);
+	tmr_start(&rj.tmr_poll, POLL_MS, poll_tick, NULL);
 
 	err = fd_listen(&rj.fhs, tjdev_fd(rj.dev), FD_READ, hid_handler, NULL);
 	if (err)
@@ -610,6 +659,8 @@ static int module_init(void)
 	return 0;
 
  fail:
+	tmr_cancel(&rj.tmr_poll);
+	(void)tjdev_release(rj.dev);
 	rj.fhs = fd_close(rj.fhs);
 	tjdev_close(rj.dev);
 	rj.dev = NULL;
@@ -623,8 +674,9 @@ static int module_close(void)
 	tmr_cancel(&tmr_reap);
 	tmr_cancel(&rj.tmr_phone);
 	tmr_cancel(&rj.tmr_ring);
+	tmr_cancel(&rj.tmr_poll);
 	if (rj.dev)
-		(void)tjdev_ring(rj.dev, false);
+		(void)tjdev_release(rj.dev);   /* ring off, chip's automatic dial tone back on */
 	rj.play = mem_deref(rj.play);
 	rj.fhs  = fd_close(rj.fhs);
 	tjdev_close(rj.dev);

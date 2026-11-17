@@ -34,6 +34,7 @@ rejack_e911_did         +15551234567   # the number your 911 calls present — s
 rejack_e911_status      /var/lib/rejack/e911
 rejack_e911_max_age     26             # hours
 rejack_dtmf             inband
+rejack_dialtone         hw          # hw = chip tone generator | sw = baresip player
 
 # Emergency fallback (runs when 911 can't go through; hook also runs on every 911 dial/hang-up)
 rejack_emergency_hook      /usr/local/bin/rejack-emergency

@@ -24,6 +24,7 @@ rejack_e911_did         +15551234567
 rejack_e911_status      @ROOT@/rejack/run/e911
 rejack_e911_max_age     26
 rejack_dtmf             inband
+rejack_dialtone         hw          # hw = chip tone generator | sw = baresip player
 rejack_emergency_hook      @ROOT@/rejack/scripts/rejack-emergency
 rejack_emergency_announce  @ROOT@/rejack/sounds/emergency.wav
 rejack_record_dir          @ROOT@/rejack/run/recordings

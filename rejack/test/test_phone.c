@@ -397,6 +397,66 @@ static void test_hid_decode(void)
 	tjdev_decode(flash, &in);   CHECK(in.fnkey == 5 && in.key == 0);
 }
 
+/* Register-polled line state, values captured on hardware 2026-11-17 (RING.md). */
+static void test_line_decode(void)
+{
+	struct tj_lstate st = { 0 };
+	struct tj_line ln;
+	const uint8_t ON = 0x01, OFF = 0x03;          /* reg 0x58 on-hook / off-hook */
+	const uint8_t idle15 = 0x8a;                   /* 0x15 idle: bit 6 clear (stale code) */
+	int changes = 0;
+
+	/* DTMF map: 1 2 3 * 0 # as read from the chip */
+	CHECK(tjdev_dtmf_char(0xc1) == '1');
+	CHECK(tjdev_dtmf_char(0xc3) == '3');
+	CHECK(tjdev_dtmf_char(0xcb) == '*');
+	CHECK(tjdev_dtmf_char(0xca) == '0');
+	CHECK(tjdev_dtmf_char(0xcc) == '#');
+	CHECK(tjdev_dtmf_char(0x8a) == 0);             /* bit 6 clear = no digit */
+
+	/* idle start: nothing reported */
+	for (int i = 0; i < 5; i++) {
+		tjdev_line_decode(&st, ON, idle15, &ln);
+		CHECK(!ln.hook_changed && !ln.offhook && !ln.digit);
+	}
+
+	/* a 1-poll glitch is ignored */
+	tjdev_line_decode(&st, OFF, idle15, &ln); CHECK(!ln.hook_changed);
+	tjdev_line_decode(&st, ON, idle15, &ln);  CHECK(!ln.hook_changed);
+	tjdev_line_decode(&st, ON, idle15, &ln);  CHECK(!ln.hook_changed);
+
+	/* off-hook reported once, after TJ_HOOK_DEBOUNCE stable polls */
+	for (int i = 0; i < TJ_HOOK_DEBOUNCE + 3; i++) {
+		tjdev_line_decode(&st, OFF, idle15, &ln);
+		changes += ln.hook_changed;
+		if (i == TJ_HOOK_DEBOUNCE - 1)
+			CHECK(ln.hook_changed && ln.offhook);
+	}
+	CHECK(changes == 1);
+
+	/* digit on rising edge only, even if bit 6 stays set for several polls */
+	tjdev_line_decode(&st, OFF, 0xc5, &ln); CHECK(ln.digit == '5');
+	tjdev_line_decode(&st, OFF, 0xc5, &ln); CHECK(ln.digit == 0);
+	tjdev_line_decode(&st, OFF, 0x85, &ln); CHECK(ln.digit == 0);
+	tjdev_line_decode(&st, OFF, 0xc5, &ln); CHECK(ln.digit == '5');   /* same key pressed again */
+
+	/* on-hook: no digits reported while on-hook */
+	for (int i = 0; i < TJ_HOOK_DEBOUNCE; i++)
+		tjdev_line_decode(&st, ON, 0x85, &ln);
+	CHECK(ln.hook_changed && !ln.offhook);
+	tjdev_line_decode(&st, ON, 0xc7, &ln); CHECK(ln.digit == 0);
+
+	/* phone already off-hook (and a stale digit latched) when Rejack starts */
+	struct tj_lstate st2 = { 0 };
+	changes = 0;
+	for (int i = 0; i < TJ_HOOK_DEBOUNCE + 2; i++) {
+		tjdev_line_decode(&st2, OFF, 0xc9, &ln);
+		changes += ln.hook_changed;
+		CHECK(ln.digit == 0);
+	}
+	CHECK(changes == 1 && ln.offhook);
+}
+
 static void write_status(const char *path, const char *content)
 {
 	FILE *f = fopen(path, "w");
@@ -463,6 +523,7 @@ int main(void)
 	test_duplicate_hook_events_ignored();
 	test_tones();
 	test_hid_decode();
+	test_line_decode();
 	test_e911_status_file();
 
 	printf("%d checks, %d failures\n", checks, failures);

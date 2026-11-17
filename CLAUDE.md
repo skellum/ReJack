@@ -16,22 +16,25 @@ Public repo: https://github.com/skellum/ReJack (MIT). Keep personal data out of 
 ## Key facts
 - Device: TigerJet Network / magicJack A921, USB VID:PID `06e6:c200`; USB 2.0 port required
 - ALSA card `TigerJet` (use `hw:TigerJet,0`, the number varies): capture 8 kHz mono, playback 8/16 kHz mono
-- HID: `/dev/magicjack-hid` (udev rule installed; `audio` group, no sudo needed). 2-byte input report
-  (bit 15 hook, bits 0-3 keypad) — not yet confirmed on hardware
+- HID: `/dev/magicjack-hid` (udev rule installed; `audio` group, no sudo needed). Line state comes from
+  registers, not the 2-byte input report (its keypad field is for TigerJet USB handsets)
 - TigerJet registers: read/write via 32-byte HID feature report (`04 <reg> <reg&0xE0> <n> <data>`) — working
 - Chip type reg 0x55 = 0x13 (non-ARM). SPI serial port (0x26–0x29) runs, but no ProSLIC answers
-- Ring drive = 0x3D bits 4+5 (works); hook = 0x58 bit 1; line power (boost converter) still **not on** — Phase 3 risk
+- **Line works from power-up, no init** (TS52 PRO, 2026-11-17): 34 V on-hook, 14 mA loop. Registers (all verified):
+  ring `0x3D |= 0x30` / `&= 0xCF`; hook `0x58` bit 1; DTMF `0x15` (bit 6 present, low nibble 1-9/A=0/B=*/C=#);
+  dial tone `0x34` bit 5 = chip automatic (power-up `0x26`), bit 6 = on command. Rejack clears bit 5 while running
+  and restores it on exit (a hard kill leaves the line silent until replug)
 - Line path echoes: unity audio loopback self-excites → Rejack needs echo cancellation
 
-## Current status (as of 2026-11-16)
-- **Phase 1 (hardware events)**: register access works. Blocked: hook test needs the cordless handset charged
-  (`rejack/run/start.sh` or `tools/tjprobe watch`, then lift/hang up/press keys).
+## Current status (as of 2026-11-17)
+- **Phase 1 (hardware events)**: done. Hook (0x58) and DTMF (0x15) verified with a TS52 PRO buttset.
 - **Phase 2 (audio)**: done at the USB/ALSA level (`tools/aloop`, 0 xruns). Off-hook listening test pending.
-- **Phase 3 (line power / ring)**: board = discrete booster + HV H-bridge (no SLIC). From magicJack's macOS driver:
-  our class is CTj580Phone_Hid; ring = 0x3D bits 4+5 (verified: H-bridge pins toggle), hook = 0x58 bit 1. Line
-  still dead after init580 — next: TS53 PRO on the line, then RE `mj_dev` SetTelephoneEnable.
+- **Phase 3 (line power / ring)**: done. Talk battery is always on; ring detected by the TS52 PRO on every burst.
+  Sources: magicJack macOS driver (CTj580Phone_Hid) + GVJackApp v2 (Windows) — see `RING.md`. The VTech CS6719's
+  "No Line" was the cordless set, not the dongle. Ring voltage not yet measured.
 - **Phase 4 (Rejack module)**: builds against baresip/libre **v4.12.0** in `deps/`, loads, opens the dongle.
-  State machine, tones, HID decode, E911 status check: 111 unit checks pass. 911 policy: always attempt;
+  State machine, tones, register-polled hook/DTMF (20 ms, debounced), hardware dial tone + ring, E911 status
+  check: 139 unit checks pass. Smoke-tested on hardware (takes/returns the line). 911 policy: always attempt;
   contacts notified (ntfy + Telegram via `rejack/scripts/rejack-emergency`); if 911 can't go through →
   announcement (`rejack/sounds/emergency.wav`) + local recording + alerts. Not yet run with a SIP account.
 - **Phase 5+ (Asterisk, provider, packaging, integrations)**: not started. Provider leaning VoIP.ms.

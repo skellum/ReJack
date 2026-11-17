@@ -116,10 +116,9 @@ Design rule: speak plain SIP; the provider is a phone-server config choice, swap
 
 Via standard Linux drivers (see `HARDWARE.md`):
 - Line → host audio (ALSA capture, 8 kHz S16 mono); host → line audio (ALSA playback, 8 or 16 kHz)
-- HID input report: hook switch, keypad (DTMF), function keys, volume — **to be verified on hardware**
-- Vendor 32-byte HID feature report = TigerJet register access (confirmed working for reads/writes)
-
-Unresolved: line power and ringing (`RING.md`).
+- Vendor 32-byte HID feature report = TigerJet register access: hook, DTMF, dial tone, ring (all verified,
+  table in `HARDWARE.md`)
+- Talk battery is built in and always on (34 V on-hook, 14 mA loop)
 
 ---
 
@@ -163,22 +162,24 @@ Unresolved: line power and ringing (`RING.md`).
 
 ## Implementation Phases
 
-### Phase 1 — Hardware events  *(blocked: waiting on cordless handset charge)*
+### Phase 1 — Hardware events  *(done 2026-11-17)*
 - [x] Register read path over hidraw (`tools/tjprobe`)
-- [ ] `tjprobe watch` across hook transitions — HID input vs register changes
-- [ ] Confirm keypad digits from the analog phone are reported (else: software DTMF detection on capture audio)
+- [x] Hook transitions: reg `0x58` bit 1 (and HID report byte `0x09` bit 7), 4/4 with a TS52 PRO
+- [x] Keypad digits: the chip decodes DTMF itself (reg `0x15`) — no software detection needed
 
 ### Phase 2 — Audio loopback
 - [x] Capture works (8 kHz, noise floor ≈ -76 dBFS); full duplex opens with no errors (aplay/arecord)
 - [x] `tools/aloop` built and run: all modes, 0 xruns; unity loop self-excites → default loop gain -6 dB
-- [ ] Off-hook test: dial tone audible in earpiece; loop = hear yourself (needs powered line + charged handset)
+- [x] Off-hook: dial tone audible on the buttset (chip-generated)
+- [ ] Loop = hear yourself through `tools/aloop loop` with the line active
 - [ ] Re-check the playback-induced capture bursts (HARDWARE.md) with the line active
 
-### Phase 3 — Line power + ring  *(in progress, `RING.md`)*
+### Phase 3 — Line power + ring  *(done 2026-11-17, `RING.md`)*
 - [x] Liberation repo reviewed — not applicable
 - [x] ProSLIC-over-SPI hypothesis tested — no SLIC answers on the serial port
-- [ ] Find line-control registers (hook diff; TjIpSys type-2 activation sequence)
-- [ ] Ring on/off + cadence
+- [x] Line-control registers from magicJack's macOS driver + GVJackApp v2; talk battery needs no init (34 V, 14 mA)
+- [x] Ring on/off (`0x3D`) detected by TS52 PRO; cadence done by Rejack (2 s / 4 s)
+- [ ] Measure ring voltage
 
 ### Phase 4 — Rejack daemon (baresip module)  *(skeleton in `rejack/`)*
 - [x] Target baresip/libre **v4.12.0** (Ubuntu's 1.0.0 is incompatible); sources in `ext/`
@@ -197,7 +198,7 @@ Unresolved: line power and ringing (`RING.md`).
 - [ ] udev rule so Rejack can open hidraw without root
 - [ ] Tone playback vs call audio both use `hw:TigerJet,0` — confirm tones are stopped before call audio opens
 - [ ] Echo canceller (webrtc_aec) on the line path
-- [ ] Hook polling fallback if HID input reports don't arrive (HOME repo saw this)
+- [x] Hook + DTMF by register polling (20 ms, debounced); hardware dial tone; chip handed back on exit
 
 ### Phase 5 — Phone server + provider
 - [ ] Asterisk with Rejack as an extension

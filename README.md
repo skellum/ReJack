@@ -18,9 +18,8 @@ Linux box just to see what would happen, and it showed up as a sound card and a 
 So here we are: no vendor software, no subscription, just old hardware I already own, an analog phone, and
 whatever cheap, legitimate phone service fits.
 
-> **Status: work in progress.** Audio and device control work over standard Linux drivers, and the phone
-> software builds and runs. Making the phone **ring** and powering the phone line are still being reverse
-> engineered — see [Status](#status).
+> **Status: work in progress.** The whole phone line works from Linux with no custom driver: talk battery,
+> dial tone, hook, touch-tone digits and **ringing**, all verified with a buttset. Next up: the first real call.
 
 ## How it works
 
@@ -45,9 +44,10 @@ whatever cheap, legitimate phone service fits.
 |---|---|
 | USB enumeration, audio (8 kHz full duplex) | ✅ Working with stock Linux drivers |
 | Chip register access over HID | ✅ Working (`tools/tjprobe`) |
-| ReJack module (call logic, tones, 911 handling) | ✅ Builds against baresip 4.12, 111 unit checks pass |
-| Hook / keypad events from the phone | 🔄 Decoded from the descriptor, hardware test pending |
-| Line power and **ringing** | ❓ Under investigation — see [`RING.md`](RING.md) |
+| Talk battery (34 V, 14 mA loop) and dial tone | ✅ Built into the dongle, on from power-up |
+| Hook, touch-tone digits, **ringing** | ✅ Verified on hardware — see [`RING.md`](RING.md) |
+| ReJack module (call logic, tones, 911 handling) | ✅ Builds against baresip 4.12, 139 unit checks pass |
+| First SIP call | ⏳ Next |
 | Phone server, provider, packaging | ⏳ Not started |
 
 ## 911

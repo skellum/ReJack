@@ -20,6 +20,8 @@ struct tjdev {
 	int  fd;
 	char path[64];
 	int  bank;   /* currently selected register bank, -1 = unknown */
+	int  saved34;   /* 0x34 before tjdev_setup(), -1 = not saved */
+	struct tj_lstate ls;
 };
 
 static void msleep(int ms)
@@ -73,6 +75,7 @@ int tjdev_open(struct tjdev **devp, const char *path)
 	if (!dev)
 		return -ENOMEM;
 	dev->bank = -1;
+	dev->saved34 = -1;
 
 	if (path && *path)
 		snprintf(dev->path, sizeof(dev->path), "%s", path);
@@ -173,14 +176,99 @@ int tjdev_reg_write(struct tjdev *dev, uint8_t reg, uint8_t val)
 	return set_feature(dev, p, 5);
 }
 
-int tjdev_line_power(struct tjdev *dev, bool on)
+static int reg_rmw(struct tjdev *dev, uint8_t reg, uint8_t and_mask, uint8_t or_bits)
 {
-	(void)dev; (void)on;
-	return -ENOTSUP;   /* TODO Phase 3: see RING.md */
+	int v = tjdev_reg_read(dev, reg);
+
+	if (v < 0)
+		return v;
+	return tjdev_reg_write(dev, reg, (uint8_t)((v & and_mask) | or_bits));
 }
 
+int tjdev_setup(struct tjdev *dev)
+{
+	int v = tjdev_reg_read(dev, 0x34);
+
+	if (v < 0)
+		return v;
+	dev->saved34 = v;
+	(void)tjdev_ring(dev, false);
+	return tjdev_reg_write(dev, 0x34, (uint8_t)(v & ~0x60));   /* auto + forced dial tone off */
+}
+
+int tjdev_release(struct tjdev *dev)
+{
+	int err = tjdev_ring(dev, false);
+	uint8_t v = dev->saved34 >= 0 ? (uint8_t)dev->saved34 : 0x26;   /* 0x26 = power-up value */
+
+	if (!err)
+		err = tjdev_reg_write(dev, 0x34, (uint8_t)((v & ~0x40) | 0x20));
+	return err;
+}
+
+/* CTj560CPhone_Hid::PlayTone(DIALTONE): on |= 0x40, off &= 0x1F. We keep bit 7 and leave bit 5 alone. */
+int tjdev_dialtone(struct tjdev *dev, bool on)
+{
+	return on ? reg_rmw(dev, 0x34, 0xFF, 0x40) : reg_rmw(dev, 0x34, 0xBF, 0x00);
+}
+
+/* CTj560CPhone_Hid::Ring(): on |= 0x30, off &= 0xCF. */
 int tjdev_ring(struct tjdev *dev, bool on)
 {
-	(void)dev; (void)on;
-	return -ENOTSUP;   /* TODO Phase 3: see RING.md */
+	return on ? reg_rmw(dev, 0x3D, 0xFF, 0x30) : reg_rmw(dev, 0x3D, 0xCF, 0x00);
+}
+
+char tjdev_dtmf_char(uint8_t r15)
+{
+	static const char map[16] = "D1234567890*#ABC";
+
+	return (r15 & 0x40) ? map[r15 & 0x0F] : 0;
+}
+
+void tjdev_line_decode(struct tj_lstate *s, uint8_t r58, uint8_t r15, struct tj_line *out)
+{
+	bool raw = (r58 & 0x02) != 0;
+	bool dv  = (r15 & 0x40) != 0;
+
+	memset(out, 0, sizeof(*out));
+	if (!s->init) {
+		/* start "on-hook": a phone already off-hook is reported as a change once debounced */
+		s->init = true;
+		s->offhook = false;
+		s->raw_last = raw;
+		s->stable = 0;
+		s->dtmf_last = dv;           /* don't report a digit latched before we started */
+	}
+
+	if (raw == s->raw_last) {
+		if (s->stable < TJ_HOOK_DEBOUNCE)
+			s->stable++;
+	}
+	else {
+		s->raw_last = raw;
+		s->stable = 1;
+	}
+	if (s->stable >= TJ_HOOK_DEBOUNCE && raw != s->offhook) {
+		s->offhook = raw;
+		out->hook_changed = true;
+	}
+	out->offhook = s->offhook;
+
+	if (dv && !s->dtmf_last && s->offhook)
+		out->digit = tjdev_dtmf_char(r15);
+	s->dtmf_last = dv;
+}
+
+int tjdev_poll(struct tjdev *dev, struct tj_line *out)
+{
+	int r58 = tjdev_reg_read(dev, 0x58);
+	int r15;
+
+	if (r58 < 0)
+		return r58;
+	r15 = tjdev_reg_read(dev, 0x15);
+	if (r15 < 0)
+		return r15;
+	tjdev_line_decode(&dev->ls, (uint8_t)r58, (uint8_t)r15, out);
+	return 0;
 }
