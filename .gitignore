@@ -25,3 +25,5 @@ rejack/run/accounts
 rejack/run/contacts
 rejack/run/uuid
 rejack/run/current_contact
+tools/tjsnap-*.bin
+tools/tj_steps-*.log

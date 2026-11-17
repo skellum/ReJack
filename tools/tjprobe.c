@@ -19,6 +19,12 @@
  *                      skipping the 128-byte 0x57 clear. Saves all 128 registers first, prints a diff.
  *   tjprobe restore snapshot.bin
  *                      Writes back the activation-touched registers from a snapshot. (Replug = full reset.)
+ *   tjprobe init580    Replays CTj580Phone_Hid::InitTjHardware() from magicJack's macOS driver exactly:
+ *                      0x01=E1,59 (unlock) ... 0x01=FF,00 (lock). Read-modify-write where the driver does.
+ *   tjprobe ring [cycles]   CTj560CPhone_Hid::Ring(): 0x3D |= 0x30 for 2 s, then &= 0xCF, 4 s off.
+ *   tjprobe hook       Poll the driver's hook bit (0x58 bit 1 = off-hook) and the HID report (0x08/0x09).
+ *   tjprobe write REG VAL   Write one TigerJet register (hex), print the inputs before/after.
+ *   tjprobe inputs     Read-only one-liner: GIO/AUX levels + registers seen to change.
  *   tjprobe watch      Read-only. Prints HID input reports and TJ registers 0x00-0x7F that change.
  *
  * Framing (non-ARM TigerJet, 32-byte feature report, no report ID), from public RE work in
@@ -178,6 +184,21 @@ static void gio_pair(const char *tag, int v, int p0) {
     (void)tag;
 }
 
+
+static int rd(int fd, int reg) { unsigned char b[REPORT_LEN]; return read_bank(fd, reg & 0xE0, b) ? -1 : b[reg & 0x1F]; }
+static int wr(int fd, int reg, int val) {
+    unsigned char v = (unsigned char)val;
+    int r = write_regs(fd, reg, &v, 1);
+    printf("  0x%02x = 0x%02x  %s\n", reg, val & 0xff, r ? strerror(-r) : "ok");
+    return r;
+}
+static int rmw(int fd, int reg, int and_mask, int or_mask) {
+    int v = rd(fd, reg);
+    if (v < 0) { printf("  read 0x%02x failed\n", reg); return -1; }
+    printf("  (0x%02x was 0x%02x)", reg, v);
+    return wr(fd, reg, (v & and_mask) | or_mask);
+}
+
 static const unsigned char act_regs[] = { 0x00, 0x02, 0x30, 0x31, 0x32, 0x33, 0x3C, 0x55 };
 
 int main(int argc, char **argv) {
@@ -284,6 +305,66 @@ int main(int argc, char **argv) {
             printf("  write 0x%02x = 0x%02x  %s\n", act_regs[i], snapv[act_regs[i]], r ? strerror(-r) : "ok");
         }
         if (!read_all(fd, now)) { printf("# remaining differences vs snapshot:\n"); diff_regs(snapv, now); }
+    } else if (!strcmp(mode, "init580")) {
+        /* CTj580Phone_Hid::InitTjHardware() (mjupdate x86_64 @ 0x10002b580), InitDTMFMemory skipped */
+        unsigned char before[128], after[128];
+        if (read_all(fd, before)) { printf("read failed\n"); return 1; }
+        wr(fd, 0x01, 0xE1);  wr(fd, 0x01, 0x59);      /* unlock */
+        wr(fd, 0x4E, 0x00);  wr(fd, 0x55, 0x80);
+        wr(fd, 0x39, 0xA0);  wr(fd, 0x3C, 0x25);
+        rmw(fd, 0x34, 0x90, 0x06);
+        rmw(fd, 0x2F, 0xFE, 0x00);
+        int c0 = rd(fd, 0x00);
+        if (c0 >= 0 && (c0 & 0x04)) {
+            rmw(fd, 0x32, 0xE0, 0x1C);
+            rmw(fd, 0x33, 0x80, 0x79);
+        } else printf("  (0x00 = 0x%02x, bit 2 clear: skipping 0x32/0x33)\n", c0);
+        wr(fd, 0x01, 0xFF);  wr(fd, 0x01, 0x00);      /* lock */
+        msleep(200);
+        if (!read_all(fd, after)) { printf("# register changes:\n"); diff_regs(before, after); }
+    } else if (!strcmp(mode, "ring")) {
+        int cycles = argc > 2 ? atoi(argv[2]) : 1;
+        for (int c = 0; c < cycles; c++) {
+            printf("# ring ON  (cycle %d/%d)\n", c + 1, cycles); fflush(stdout);
+            rmw(fd, 0x3D, 0xFF, 0x30);
+            msleep(2000);
+            printf("# ring OFF\n"); fflush(stdout);
+            rmw(fd, 0x3D, 0xCF, 0x00);
+            if (c + 1 < cycles) msleep(4000);
+        }
+    } else if (!strcmp(mode, "hook")) {
+        int last = -1;
+        printf("# polling 0x58 bit1 (off-hook) every 100 ms; Ctrl-C to stop\n");
+        for (;;) {
+            int h = rd(fd, 0x58), r9 = rd(fd, 0x09);
+            if (h < 0) { msleep(200); continue; }
+            int now = (h >> 1) & 1;
+            if (now != last) { printf("%s  (0x58=0x%02x, 0x09=0x%02x)\n", now ? "OFF-HOOK" : "on-hook ", h, r9); fflush(stdout); last = now; }
+            msleep(100);
+        }
+    } else if (!strcmp(mode, "inputs") || !strcmp(mode, "write")) {
+        unsigned char r[128];
+        if (!strcmp(mode, "write")) {
+            if (argc < 4) { fprintf(stderr, "usage: %s write REG VAL (hex)\n", argv[0]); return 2; }
+            unsigned reg = (unsigned)strtoul(argv[2], NULL, 16), val = (unsigned)strtoul(argv[3], NULL, 16);
+            if (reg > 0x7f || val > 0xff) { fprintf(stderr, "reg 00-7f, val 00-ff\n"); return 2; }
+            unsigned char v = (unsigned char)val;
+            int w = write_regs(fd, (int)reg, &v, 1);
+            printf("write 0x%02x = 0x%02x: %s\n", reg, val, w ? strerror(-w) : "ok");
+            msleep(50);
+        }
+        if (read_all(fd, r)) { printf("read failed\n"); return 1; }
+        int gio = 0;
+        for (int k = 0; k < 4; k++) gio |= ((r[0x0a] >> (2*k+1)) & 1) << k;
+        for (int k = 0; k < 4; k++) gio |= ((r[0x0f] >> (2*k+1)) & 1) << (4 + k);
+        gio |= ((r[0x1a] >> 1) & 1) << 8 | ((r[0x1b] >> 1) & 1) << 9 | ((r[0x1c] >> 1) & 1) << 10;
+        gio |= ((r[0x10] >> 1) & 1) << 11 | ((r[0x10] >> 3) & 1) << 12 | ((r[0x11] >> 1) & 1) << 13 | ((r[0x11] >> 3) & 1) << 14;
+        printf("inputs: GIO14..0 ");
+        for (int b = 14; b >= 0; b--) printf("%d%s", (gio >> b) & 1, b % 4 == 0 && b ? "_" : "");
+        printf("  AUX7..0 ");
+        for (int b = 7; b >= 0; b--) printf("%d", (r[0x12] >> b) & 1);
+        printf("  | 00=%02x 02=%02x 15=%02x 30-33=%02x%02x%02x%02x 3c=%02x 58=%02x 5f=%02x\n",
+               r[0x00], r[0x02], r[0x15], r[0x30], r[0x31], r[0x32], r[0x33], r[0x3c], r[0x58], r[0x5f]);
     } else if (!strcmp(mode, "watch")) {
         /* Read-only: print HID input reports (hook/keys) and any TJ register 0x00-0x7F that changes.
          * Lift/hang up the handset and press keys while this runs. Ctrl-C to stop. */
@@ -316,7 +397,7 @@ int main(int argc, char **argv) {
             msleep(150);
         }
     } else {
-        fprintf(stderr, "usage: %s [get|regs|gpio|slic|slic-reset|watch|activate [snap]|restore snap]\n", argv[0]);
+        fprintf(stderr, "usage: %s [get|regs|gpio|inputs|write R V|init580|ring [n]|hook|slic|slic-reset|watch|activate [snap]|restore snap]\n", argv[0]);
         return 2;
     }
     close(fd);
