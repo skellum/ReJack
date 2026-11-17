@@ -207,3 +207,23 @@ reset values almost byte for byte — confirms the family.
 - If the line is dead: the booster probably needs an enable that the updater never calls. Next RE target:
   the softphone driver `mj_dev` (in magicJackSetup.dmg, stripped but with class strings) —
   `SetTelephoneEnable` and the device-vtable calls it makes for CTj580Phone_Hid.
+
+### `mj_dev` (the real softphone driver) — 2026-11-16 late
+Source: magicJack's public `magicJackSetup.dmg` → `upgrade` binary → embedded ZIP → `Softphone/magicJack.app/
+Contents/MacOS/mj_dev` (universal x86_64 + arm64, stripped, RTTI present for CTj580Phone_Hid / CTj560CPhone_Hid).
+Located the TigerJet helpers by byte signature from the symbol-rich updater: `tjoutp` 0x10018fdd0,
+`tjinp` 0x10018fdf0, `WriteTjRegs` 0x10019f250 (x86_64 slice). Every call site was decoded (see notes below).
+- The 580/560C code in mj_dev is **the same** as in mjupdate (same InitTjHardware, Ring/0x3D, polarity, hook/0x58).
+- Only extra write: **`0x4E |= 0x40` in the chip-class destructors** → 0x4E bit 6 = power-down/standby on close
+  (init writes 0x4E = 0). Ours reads 0x00, so not the missing piece.
+- **`SetTelephoneEnable [1|0]`** is a custom-command handler (func 0x10000b640) on the handset-driver object:
+  `SetToneType(0)`, `SetRinging(false)`, `if (!IsOnHook()) SetCustom(1)`, then a flag. Slots resolved via the
+  updater's `vtable for CSJHandsetMagicJackDriverTest`. **No hardware "line enable" exists in software.**
+- CTj580Phone_Hid vtable resolved in full (mjupdate @0x1000610b0): e.g. slot 0x150 = Ring, 0x0e0 =
+  SetTipRingPolarity, 0x1f8 = RestoreHardwareDefaultValues (not called by the 580's InitTjHardware).
+
+**Conclusion:** talk battery on this board is meant to be automatic (TigerJet-controlled boost, likely configured
+by the 0x34/0x39/0x3C values InitTjHardware writes). "No Line" after init580 therefore points at the **hardware**:
+boost not switching (Q7 gate drive), a failed/dry electrolytic (C38; C39 footprint empty), or talk battery present
+but below the VTech's threshold. Next: TS53 PRO for line voltage; **5 V logic probe on Q7's gate** (pulses = boost
+being driven); then C38 voltage. GIO0/GIO1 changing even when idle may be the boost PWM/feedback.
