@@ -1,0 +1,30 @@
+# Rejack dev config template for baresip v4.12. start.sh writes ./config from this,
+# replacing @ROOT@ with the project directory. Edit this file, not ./config.
+poll_method             epoll
+sip_listen              127.0.0.1:5070
+call_accept             no
+audio_player            alsa,hw:TigerJet,0
+audio_source            alsa,hw:TigerJet,0
+audio_alert             alsa,hw:TigerJet,0
+ausrc_srate             8000
+auplay_srate            8000
+ausrc_channels          1
+auplay_channels         1
+module_path             @ROOT@/deps/lib/baresip/modules
+module                  g711.so
+module                  alsa.so
+module_app              account.so
+module_app              rejack.so
+rejack_hid              auto
+rejack_audio_mod        alsa
+rejack_audio_dev        hw:TigerJet,0
+rejack_interdigit       4000
+rejack_911              allow
+rejack_e911_did         +15551234567
+rejack_e911_status      @ROOT@/rejack/run/e911
+rejack_e911_max_age     26
+rejack_dtmf             inband
+rejack_emergency_hook      @ROOT@/rejack/scripts/rejack-emergency
+rejack_emergency_announce  @ROOT@/rejack/sounds/emergency.wav
+rejack_record_dir          @ROOT@/rejack/run/recordings
+rejack_record_dev          hw:TigerJet,0

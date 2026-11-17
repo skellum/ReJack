@@ -1,0 +1,42 @@
+# Rejack additions/overrides for baresip's ~/.baresip/config
+# (baresip writes a full default config on first run; edit the matching lines there.)
+
+# --- Audio: the dongle, 8 kHz mono, G.711 -------------------------------------------
+audio_player            alsa,hw:TigerJet,0
+audio_source            alsa,hw:TigerJet,0
+audio_alert             alsa,hw:TigerJet,0
+ausrc_srate             8000
+auplay_srate            8000
+ausrc_channels          1
+auplay_channels         1
+
+module_path             /home/user/ReJack/deps/lib/baresip/modules   # <project>/deps/...
+module                  g711.so
+module                  alsa.so
+# echo canceller for the 2-wire line (see HARDWARE.md loop test); needs webrtc-audio-processing
+#module                 webrtc_aec.so
+
+# --- UI: Rejack replaces menu.so ------------------------------------------------------
+# Comment out `module_app menu.so` in the default config: menu also answers calls and
+# plays its own ring tones, which conflicts with the phone hardware.
+module_app              rejack.so
+# Optional: local console control for debugging (dial/hangup from the terminal)
+#module                 stdio.so
+
+# --- Rejack ---------------------------------------------------------------------------
+rejack_hid              auto
+rejack_audio_mod        alsa
+rejack_audio_dev        hw:TigerJet,0
+#rejack_account         sip:rejack@pbx.home.arpa
+rejack_interdigit       4000
+rejack_911              allow          # allow (default: always attempt 911) | verified | block
+rejack_e911_did         +15551234567   # the number your 911 calls present — set to your real DID
+rejack_e911_status      /var/lib/rejack/e911
+rejack_e911_max_age     26             # hours
+rejack_dtmf             inband
+
+# Emergency fallback (runs when 911 can't go through; hook also runs on every 911 dial/hang-up)
+rejack_emergency_hook      /usr/local/bin/rejack-emergency
+rejack_emergency_announce  /usr/local/share/rejack/emergency.wav
+rejack_record_dir          /var/lib/rejack/recordings
+rejack_record_dev          hw:TigerJet,0

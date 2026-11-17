@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+# rejack-emergency — notify emergency contacts about 911 activity on the Rejack phone.
+#
+# Called by rejack.so (rejack_emergency_hook):
+#     rejack-emergency <dialed|failed|ended> <verified|unverified> <reason|-> <recording.wav|->
+# Also:
+#     rejack-emergency flush      # resend anything queued while offline (run from a timer)
+#     rejack-emergency test       # send a test message on every configured channel
+#
+# Channels are enabled by setting variables in /etc/rejack/emergency.env (or $REJACK_EMERGENCY_ENV):
+#     REJACK_PHONE_NAME="Home phone"
+#     EMAIL_TO="you@example.com"              # needs a working `sendmail` (msmtp, postfix, ...)
+#     TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=...
+#     DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+#     NTFY_URL=https://ntfy.sh/your-secret-topic  # phone push via the ntfy app
+# Recordings are attached where the channel supports it (Telegram, Discord, email).
+# Failed sends go to $OUTBOX and are retried by `flush`.
+set -u
+
+ENV_FILE=${REJACK_EMERGENCY_ENV:-/etc/rejack/emergency.env}
+# shellcheck disable=SC1090
+[ -r "$ENV_FILE" ] && . "$ENV_FILE"
+
+NAME=${REJACK_PHONE_NAME:-Rejack phone}
+OUTBOX=${REJACK_OUTBOX:-/var/lib/rejack/outbox}
+LOG=${REJACK_EMERGENCY_LOG:-/var/lib/rejack/emergency.log}
+mkdir -p "$OUTBOX" 2>/dev/null
+
+log() { printf '%s %s\n' "$(date -Is)" "$*" >>"$LOG" 2>/dev/null; printf '%s\n' "$*" >&2; }
+
+# ---- channels: each returns 0 on success -----------------------------------------------
+send_ntfy() {   # text only
+	[ -n "${NTFY_URL:-}" ] || return 0
+	local t
+	t=$(printf '%s' "$1" | LC_ALL=C tr -cd '\40-\176' | sed 's/^ *//')   # headers must be ASCII
+	curl -fsS -m 20 -H "Title: $t" -H "Priority: urgent" -H "Tags: rotating_light" \
+		-d "$2" "$NTFY_URL" >/dev/null
+}
+
+send_telegram() {
+	[ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ] || return 0
+	local api="https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN"
+	curl -fsS -m 20 -d chat_id="$TELEGRAM_CHAT_ID" --data-urlencode text="$1"$'\n'"$2" \
+		"$api/sendMessage" >/dev/null || return 1
+	if [ -n "$3" ] && [ -s "$3" ]; then
+		curl -fsS -m 120 -F chat_id="$TELEGRAM_CHAT_ID" -F audio=@"$3" \
+			"$api/sendAudio" >/dev/null || return 1
+	fi
+}
+
+send_discord() {
+	[ -n "${DISCORD_WEBHOOK_URL:-}" ] || return 0
+	local msg
+	msg=$(printf '**%s**\n%s' "$1" "$2" | python3 -c 'import json,sys; print(json.dumps({"content": sys.stdin.read()}))')
+	if [ -n "$3" ] && [ -s "$3" ]; then
+		curl -fsS -m 120 -F payload_json="$msg" -F file1=@"$3" "$DISCORD_WEBHOOK_URL" >/dev/null
+	else
+		curl -fsS -m 20 -H 'Content-Type: application/json' -d "$msg" "$DISCORD_WEBHOOK_URL" >/dev/null
+	fi
+}
+
+send_email() {
+	[ -n "${EMAIL_TO:-}" ] || return 0
+	command -v sendmail >/dev/null || return 1
+	local b="rejack-$$-$RANDOM"
+	{
+		printf 'To: %s\nSubject: %s\nMIME-Version: 1.0\n' "$EMAIL_TO" "$1"
+		printf 'Content-Type: multipart/mixed; boundary="%s"\n\n--%s\n' "$b" "$b"
+		printf 'Content-Type: text/plain; charset=utf-8\n\n%s\n' "$2"
+		if [ -n "$3" ] && [ -s "$3" ]; then
+			printf -- '--%s\nContent-Type: audio/wav; name="%s"\n' "$b" "$(basename "$3")"
+			printf 'Content-Transfer-Encoding: base64\nContent-Disposition: attachment; filename="%s"\n\n' "$(basename "$3")"
+			base64 "$3"
+		fi
+		printf -- '--%s--\n' "$b"
+	} | sendmail -t
+}
+
+send_all() {    # title body recording ; queue every channel that fails
+	local ch failed=0
+	for ch in ntfy telegram discord email; do
+		if ! "send_$ch" "$1" "$2" "$3"; then
+			failed=1
+			local q
+			q=$(mktemp "$OUTBOX/$(date +%s)-$ch-XXXX") &&
+				printf '%s\n%s\n%s\n' "$ch" "$3" "$1" >"$q" && printf '%s' "$2" >>"$q"
+			log "send via $ch failed — queued $q"
+		fi
+	done
+	return $failed
+}
+
+flush() {
+	local q ch rec title body
+	for q in "$OUTBOX"/*; do
+		[ -f "$q" ] || continue
+		ch=$(sed -n 1p "$q"); rec=$(sed -n 2p "$q"); title=$(sed -n 3p "$q"); body=$(sed -n '4,$p' "$q")
+		if "send_$ch" "$title" "$body" "$rec"; then rm -f "$q"; log "resent $q"; fi
+	done
+}
+
+# ---- main ----------------------------------------------------------------------------------
+case "${1:-}" in
+flush) flush; exit 0 ;;
+test)  send_all "TEST: $NAME" "Rejack emergency notification test." ""; exit $? ;;
+dialed|failed|ended) ;;
+*) echo "usage: $0 dialed|failed|ended verified|unverified reason recording | flush | test" >&2; exit 2 ;;
+esac
+
+event=$1 e911=${2:-unverified} reason=${3:--} rec=${4:--}
+[ "$reason" = "-" ] && reason=""
+[ "$rec" = "-" ] && rec=""
+when=$(date '+%a %b %-d %H:%M:%S %Z')
+
+flush   # anything stuck from before goes first
+
+case "$event" in
+dialed)
+	title="🚨 911 dialed from $NAME"
+	body="911 was dialed at $when. E911 address: $e911."
+	[ "$e911" = unverified ] && body="$body Dispatch may NOT have the address — confirm the location."
+	send_all "$title" "$body" "" ;;
+failed)
+	title="🚨 911 FAILED from $NAME — call back NOW"
+	body="911 was dialed at $when but did not go through ($reason). The line is being recorded."
+	[ -n "$rec" ] && body="$body Recording: $rec"
+	send_all "$title" "$body" "" ;;
+ended)
+	title="911 call ended — $NAME"
+	body="The phone was hung up at $when."
+	[ -n "$rec" ] && body="$body Fallback recording attached ($rec)."
+	sleep 1   # let arecord finish writing the WAV header
+	send_all "$title" "$body" "$rec" ;;
+esac
+log "$event e911=$e911 reason='$reason' rec='$rec'"
