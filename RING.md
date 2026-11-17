@@ -114,3 +114,83 @@ sine/trapezoid — consistent with discrete line circuitry driven by TigerJet GP
 3. **Medium risk (needs OK)**: GPIO output probing — set one pin at a time to output *at its current input level*
    (no electrical change), then toggle briefly, watching sense inputs and the phone. Risk: contention if a pin
    is driven externally. Start with pins pulled high (likely active-low enables).
+
+### Result: `tjprobe activate` (2026-11-16, phone plugged in, LED on before)
+All 10 writes accepted (0x55 silently ignored — read-only chip type). Device stayed enumerated.
+Register changes (snapshot diff):
+| Reg | Before | After | Meaning |
+|---|---|---|---|
+| 0x00 | 26 | 40 | written (C0→40) |
+| 0x02 | 04 | 00 | written (20→00) |
+| 0x30–0x33 | 34 e2 19 79 | 80 3e 00 7d | written |
+| 0x3c | 20 | 32 | written |
+| **0x0a** | a0 | **a8** | **GIO1 input 0→1** (not written — external circuit reacted) |
+| **0x0f** | 28 | **aa** | **GIO4 and GIO7 inputs 0→1** (not written) |
+| 0x12 | bc | 9c | AUX5 1→0 (AUX inputs also drift on their own: 9e/9c/bc seen) |
+| 0x15 | 80 | 00 | not written, undocumented |
+| 0x58 | 03 | 01 | not written |
+| 0x5f | 01 | 00 | not written |
+5-second sampling afterwards (508 reads): all of the above steady — no toggling.
+Physical effect: (pending — LED, cordless "no line" indicator, dial tone/hum)
+Undo: `tjprobe restore <snapshot>` or replug.
+
+### Result: step-through of the type-2 activation (`tools/tj_steps.sh`, 2026-11-16 21:57)
+One write at a time, 10 s human watch of LED + VTech handset "No Line" after each: **no visible change at any
+step** (LED solid, "No Line" throughout). Conclusion: **the TjIpSys type-2 activation does not power the line.**
+- Only input effect: writing **0x02 = 0x20** (clearing bit 2; original 0x04) flips **GIO4 and GIO7 0→1**, and
+  0x02 = 0x00 keeps them high. Likely a pin-mux/alternate-function bit, not line circuitry.
+- Earlier "GIO1 0→1" was drift, not activation: GIO1 already read 1 at the restored baseline. GIO0/GIO1, AUX1/AUX5,
+  0x15, 0x58, 0x5f all change on their own → sense inputs or status registers.
+- New lead: the snapshot taken just before activation had **0x09 = 0x80**; it read 0x00 every other time.
+  On the Tiger560B, **0x08/0x09 = HID Report Value low/high** — bit 15 is our hook-switch bit. So the chip
+  may have reported "off-hook" at that moment (cordless base seizing the line?). Registers 0x08/0x09 give a
+  pollable view of the HID report; 0x0C–0x0E are a "software HID report" that firmware/host can inject.
+
+## Board photo (2026-11-16): no ProSLIC — discrete line circuit
+See HARDWARE.md "Board". Discrete boost converter (L4 100 µH, D1, C38, switch transistor), HV transistors
+(MMBT5401 ×2 visible, 5551-class NPN), PC814 AC-input opto for loop sense, no SLIC or boost-controller IC on the
+component side. The ProSLIC SPI hypothesis is closed. Next: back-side photo (Q1–Q3, U1/U3/U4), then trace which
+TigerJet pins reach the switch transistor bases and the opto output — before any GPIO output experiment.
+
+## ★ From magicJack's own macOS driver (2026-11-16 late) — our chip's real code paths
+Source: `mjupdate` in magicJack's public `mjisoupdate.dmg` (upgrades.magicjack.com; downloaded to the
+gitignored `images/vendor/` for local interoperability analysis only — nothing redistributed). Universal
+Mach-O, x86_64 slice, **symbols intact** (libTjSdkMac.a: Tj560BPhone.o, Tj560CPhone.o, **Tj580Phone.o**, Tj780…).
+
+**Class selection** (`CSJHandsetMagicJackDriverBase::CreateTjDeviceInstance`, jump table @ 0x100034760):
+devType 1 → **CTj580Phone_Hid**, 4 → CTj780, 5 → CTj880, 7 → CTj980, 8 → CTj911 (HOME = ARM types).
+Our bcdDevice is 0.01 → devType 1 → **CTj580Phone_Hid**, which **inherits CTj560CPhone_Hid**
+(constructor calls the 560C constructor). The 560C class has **no ProSLIC methods** — it's the discrete-line
+family, matching the board photos.
+
+Primitives: `tjoutp(reg, val)` = `WriteTjRegs(reg, &val, 1)` = our `04 <reg> <reg&E0> 01 <val>`;
+`tjinp(reg, &val)` = read.
+
+**CTj580Phone_Hid::InitTjHardware()** (@0x10002b580):
+```
+0x01 = E1 ; 0x01 = 59                 ← unlock key
+0x4E = 00 ; 0x55 = 80 ; 0x39 = A0 ; 0x3C = 25
+0x34 = (0x34 & 0x90) | 0x06
+0x2F =  0x2F & 0xFE
+if (0x00 & 0x04) { 0x32 = (0x32 & 0xE0) | 0x1C ; 0x33 = (0x33 & 0x80) | 0x79 }
+0x01 = FF ; 0x01 = 00                 ← lock
+```
+(on first open also `InitDTMFMemory`: 0x00|=0x80, 0x02|=0x20, 128 zero bytes @0x57, then undo — DTMF memory.)
+Our earlier "activate" used the 560C/type-2 values **without the E1/59 unlock** — likely why nothing happened.
+
+**Ring / polarity — register 0x3D** (CTj560CPhone_Hid, inherited):
+- `Ring(true, x)`: `0x3D |= 0x30` (bits 4+5). `Ring(false, true)`: `&= 0xCF`. `Ring(false, false)`: `&= 0xEF` (keeps bit 5).
+  Cadence (2 s / 4 s) is done by the caller; the 20 Hz square wave is generated in hardware.
+- `SetTipRingPolarity(b)`: bit 7. `SetLineReversal()`: bit 7 high for 100 ms.
+- 560C init clears bit 4 (`&= 0xEF`). Our 0x3D reads 0x00.
+
+**Hook — register 0x58 bit 1** (CTj580Phone_Hid::KeyScan @0x10002b8e0): set = off-hook (debounced in software;
+going off-hook while ringing calls Ring(false, true)). Matches the one snapshot where 0x58 = 03 and 0x09 = 80.
+
+**Line power:** no explicit "line on" call exists in the 560C/580 paths (no GPIO/AUX writes; `SetAuxCtrl` is
+560B-only). So talk battery is either automatic in hardware once InitTjHardware has run (0x55=80, 0x39=A0 and
+0x3C=25 are the candidates), or comes with the ring bits. Hardware test pending:
+`tjprobe init580` → watch "No Line"; then `tjprobe ring 2`; `tjprobe hook`.
+
+Default register tables `_tj560c_reg_00_1e / _26_2d / _34_59` (RestoreHardwareDefaultValues) match our chip's
+reset values almost byte for byte — confirms the family.

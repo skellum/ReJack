@@ -177,3 +177,61 @@ This creates `/dev/magicjack-hid` as a stable symlink and grants access to users
   floor. Rejack needs an echo canceller / gain margin on the line path (baresip has AEC modules).
 - SCHED_FIFO denied for the normal user — grant via `/etc/security/limits.d` rtprio for the audio group
   or a systemd `LimitRTPRIO=` when packaging.
+
+## Board (component side photographed 2026-11-16; photo in `images/board/`, not committed)
+
+No ProSLIC or other SLIC IC on this side — the phone line is driven by **discrete parts**:
+
+| Ref | Marking | Identification | Likely role |
+|---|---|---|---|
+| U2 | "Magic Chip 0811 P4MR9-010", 100-pin QFP | Custom-marked TigerJet (2008 wk 11) | USB, audio, HID, GPIO |
+| Y1 | JL12.000 | 12.000 MHz crystal | TigerJet clock |
+| U5 | Sharp "814A", L0808 | PC814A AC-input optocoupler | Loop-current (hook) sense, both polarities |
+| Q4, Q5 | "2L" (SOT-23) | MMBT5401 (150 V PNP) | High-voltage line switching (polarity / ring) |
+| Q6 | "82TAF H5551" (SOT-223) | 5551-class high-voltage NPN (160 V) | Boost switch or line feed |
+| L4 | "101" shielded | 100 µH power inductor | Boost converter inductor |
+| D1 | glass MELF, orange | Diode/zener | Boost rectifier or voltage clamp |
+| C38 | large SMD electrolytic | Bulk capacitor | High-voltage (≈50 V) reservoir |
+| C39 | — | **Empty footprint** (polarised electrolytic outline, tinned pads) | Second reservoir cap, unpopulated (or lost?) |
+| D3 | clear SMD LED | Blue LED | Power/status indicator (solid) |
+| J1 / J2 | | USB-A plug / RJ11 jack | |
+
+### Back side — silkscreen "magicjack.com PhoneJack A921 Rev3.0 V1.0"
+
+| Ref | Marking | Identification | Likely role |
+|---|---|---|---|
+| (flash) | Samsung K9F5608U0D PCB0 (TSOP-48) | 256 Mbit = 32 MB NAND flash | The CD-ROM + "PHONE" storage (10 + 17.8 MB) |
+| **Q7** | unreadable, DPAK/TO-252 | Power MOSFET (by package + placement) | **Boost converter switch** (L4 on the other side) |
+| **D8** | ES1D MIC | 1 A / 200 V super-fast rectifier | **Boost converter output diode** |
+| R101 | R33 (2512) | 0.33 Ω | Current sense (boost switch source?) |
+| (SOT-23) | "1P" | MMBT2222A small NPN | Gate driver / level shift for Q7, or regulation loop |
+| (SOT-23) | "H" | small diode/zener (unconfirmed) | Bias / clamp |
+| (SOT-223) | unmarked | probably 3.3 V LDO | TigerJet core supply |
+| **Q3** | 82TAF H5551 (SOT-223) | 5551-class 160 V NPN | Line driver, low side |
+| **Q1, Q2** | "2L" | MMBT5401 150 V PNP | Line driver, high side |
+| D4–D7 | 4× glass MELF | Diode bridge | Polarity guard (loop sense / line feed) |
+| D2, D11 | glass MELF | Diodes / zeners | Clamp / USB power path |
+
+### Line circuit as built (inference from both sides, not yet traced)
+- **Boost converter**: USB 5 V → L4 (100 µH) → Q7 MOSFET switch → D8 (ES1D) → C38 (+ empty C39) ≈ 50 V talk battery.
+  Gate drive via a 2222-class NPN. **No PWM/boost controller IC anywhere** → the switching signal must come from
+  the TigerJet (clock divider A/B routed to GIO8/9/10 is the obvious candidate) and regulation is either a clamp
+  (D1 zener?) or firmware bang-bang on a sense input.
+- **Line driver**: 2 × 5551 NPN (Q3, Q6) + 4 × 5401 PNP (Q1, Q2, Q4, Q5) → an H-bridge feeding tip/ring.
+  Toggling the bridge ≈ 20 Hz from the boosted rail = the **square-wave ring** Sandman measured (85 V p-p class).
+- **Hook sense**: PC814 AC-input opto in the loop (with D4–D7 bridge) → a TigerJet GIO/AUX input.
+- **Hazards**: a GIO that turns Q7 on and stays on shorts USB 5 V through L4; an unclamped boost on a light load
+  can over-volt C38. Only pulsed / divider-driven experiments, with a meter on C38, and only after tracing.
+
+### Tiger560B pinout (if the "Magic Chip" is pin-compatible — unverified; it's a USB 2.0 part, the 560B is 1.1)
+GIO0 p2, GIO1 p3, GIO2 p4, GIO3 p6, GIO4 p7, GIO5 p8, GIO6 p9, GIO7 p12, **GIO8 p13, GIO9 p14, GIO10 p16**,
+GIO11 p17, GIO12 p18, GIO13 p19, GIO14 p22, EXTRST# p70, AUX0–4 p76–80. Pin 1 = WAKEUP (dot corner).
+
+Implications:
+- Explains the dead SPI port: there is no ProSLIC to answer.
+- A boost converter (L4/D1/C38 + switch) with **no visible controller IC** means something must switch it —
+  possibly a TigerJet GPIO or clock-divider output (GIO8–10 can output divider A/B square waves).
+- Square-wave ring (Sandman) fits an H-bridge of HV transistors (5401/5551) toggled at ~20 Hz.
+- **Safety:** never hold an unknown GPIO output static high — if it drives the boost switch, the 100 µH inductor
+  shorts USB 5 V to ground through the transistor. An unregulated boost on a light load can also over-volt C38.
+  No GPIO output experiments until the switch/feedback wiring is understood.
