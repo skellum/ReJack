@@ -20,15 +20,16 @@ Public repo: https://github.com/skellum/ReJack (MIT). Keep personal data out of 
   (bit 15 hook, bits 0-3 keypad) — not yet confirmed on hardware
 - TigerJet registers: read/write via 32-byte HID feature report (`04 <reg> <reg&0xE0> <n> <data>`) — working
 - Chip type reg 0x55 = 0x13 (non-ARM). SPI serial port (0x26–0x29) runs, but no ProSLIC answers
-- Line power + ring mechanism: **unknown** (Phase 3, the biggest project risk)
+- Ring drive = 0x3D bits 4+5 (works); hook = 0x58 bit 1; line power (boost converter) still **not on** — Phase 3 risk
 - Line path echoes: unity audio loopback self-excites → Rejack needs echo cancellation
 
 ## Current status (as of 2026-11-16)
 - **Phase 1 (hardware events)**: register access works. Blocked: hook test needs the cordless handset charged
   (`rejack/run/start.sh` or `tools/tjprobe watch`, then lift/hang up/press keys).
 - **Phase 2 (audio)**: done at the USB/ALSA level (`tools/aloop`, 0 xruns). Off-hook listening test pending.
-- **Phase 3 (line power / ring)**: open. Next lead: TjIpSys type-2 activation registers (0x00, 0x02, 0x30–0x33,
-  0x3C, 0x55, 0x57) and register 0x12 (GPIO) behaviour across hook changes.
+- **Phase 3 (line power / ring)**: board = discrete booster + HV H-bridge (no SLIC). From magicJack's macOS driver:
+  our class is CTj580Phone_Hid; ring = 0x3D bits 4+5 (verified: H-bridge pins toggle), hook = 0x58 bit 1. Line
+  still dead after init580 — next: TS53 PRO on the line, then RE `mj_dev` SetTelephoneEnable.
 - **Phase 4 (Rejack module)**: builds against baresip/libre **v4.12.0** in `deps/`, loads, opens the dongle.
   State machine, tones, HID decode, E911 status check: 111 unit checks pass. 911 policy: always attempt;
   contacts notified (ntfy + Telegram via `rejack/scripts/rejack-emergency`); if 911 can't go through →

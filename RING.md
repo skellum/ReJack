@@ -195,3 +195,16 @@ going off-hook while ringing calls Ring(false, true)). Matches the one snapshot 
 
 Default register tables `_tj560c_reg_00_1e / _26_2d / _34_59` (RestoreHardwareDefaultValues) match our chip's
 reset values almost byte for byte — confirms the family.
+
+### Hardware test of the driver sequences (2026-11-16 ~22:40, freshly replugged)
+- `tjprobe init580`: all writes accepted; changed 0x2F 15→14, 0x32 19→1C, 0x34 26→06, 0x39 90→A0, 0x3C 20→25,
+  side effect 0x64 0E→0C. 0x3D read 0x0C. **VTech handset still "No Line"** (no talk battery).
+- `tjprobe ring 2` (0x3D 0C↔3C, 2 s on / 4 s off): **GIO4–7 alternate 0110 ↔ 1001 during the bursts** and sit at
+  0110 between them — the H-bridge drive pins toggling. So the ring *drive* works. Nothing seen/heard at the base
+  (handset battery died; base gives no ring indication). GIO0/1 change between samples even when idle
+  (booster feedback? hook sense?).
+- Open question: is the boost converter running at all? Next session: Fluke TS53 PRO + banjo on the RJ11 —
+  idle battery/polarity, off-hook (0x58 bit 1), ring detection during `tjprobe ring`.
+- If the line is dead: the booster probably needs an enable that the updater never calls. Next RE target:
+  the softphone driver `mj_dev` (in magicJackSetup.dmg, stripped but with class strings) —
+  `SetTelephoneEnable` and the device-vtable calls it makes for CTj580Phone_Hid.
