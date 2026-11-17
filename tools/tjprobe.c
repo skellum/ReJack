@@ -21,8 +21,10 @@
  *                      Writes back the activation-touched registers from a snapshot. (Replug = full reset.)
  *   tjprobe init580    Replays CTj580Phone_Hid::InitTjHardware() from magicJack's macOS driver exactly:
  *                      0x01=E1,59 (unlock) ... 0x01=FF,00 (lock). Read-modify-write where the driver does.
+ *   tjprobe gvinit     Replays GVJackApp v2's PhoneJack init (Windows, 2013): like init580 but 0x32/0x33
+ *                      written unconditionally, 0x3D=00, and the chip left unlocked.
  *   tjprobe ring [cycles]   CTj560CPhone_Hid::Ring(): 0x3D |= 0x30 for 2 s, then &= 0xCF, 4 s off.
- *   tjprobe hook       Poll the driver's hook bit (0x58 bit 1 = off-hook) and the HID report (0x08/0x09).
+ *   tjprobe hook       Poll the hook bit (0x58 bit 1 = off-hook) and the chip DTMF decoder (0x15, per GVJack).
  *   tjprobe write REG VAL   Write one TigerJet register (hex), print the inputs before/after.
  *   tjprobe inputs     Read-only one-liner: GIO/AUX levels + registers seen to change.
  *   tjprobe watch      Read-only. Prints HID input reports and TJ registers 0x00-0x7F that change.
@@ -322,6 +324,17 @@ int main(int argc, char **argv) {
         wr(fd, 0x01, 0xFF);  wr(fd, 0x01, 0x00);      /* lock */
         msleep(200);
         if (!read_all(fd, after)) { printf("# register changes:\n"); diff_regs(before, after); }
+    } else if (!strcmp(mode, "gvinit")) {
+        /* GVJackApp v2 (Windows, 2013) TigerJet/PhoneJack init @ 0x415aec: unconditional 0x32/0x33,
+         * ring-off = 0x3D := 0x00, and the chip is left UNLOCKED (no 0x01=FF,00). */
+        unsigned char before[128], after[128];
+        if (read_all(fd, before)) { printf("read failed\n"); return 1; }
+        wr(fd, 0x01, 0xE1);  wr(fd, 0x01, 0x59);      /* unlock */
+        wr(fd, 0x55, 0x80);  wr(fd, 0x39, 0xA0);  wr(fd, 0x3C, 0x25);
+        wr(fd, 0x3D, 0x00);                           /* RingOff */
+        wr(fd, 0x32, 0x1C);  wr(fd, 0x33, 0x79);
+        msleep(200);
+        if (!read_all(fd, after)) { printf("# register changes:\n"); diff_regs(before, after); }
     } else if (!strcmp(mode, "ring")) {
         int cycles = argc > 2 ? atoi(argv[2]) : 1;
         for (int c = 0; c < cycles; c++) {
@@ -333,14 +346,21 @@ int main(int argc, char **argv) {
             if (c + 1 < cycles) msleep(4000);
         }
     } else if (!strcmp(mode, "hook")) {
-        int last = -1;
-        printf("# polling 0x58 bit1 (off-hook) every 100 ms; Ctrl-C to stop\n");
+        int last = -1, lastd = 0;
+        printf("# polling 0x58 bit1 (off-hook) + 0x15 DTMF (bit6 valid, low nibble digit) every 50 ms; Ctrl-C to stop\n");
         for (;;) {
-            int h = rd(fd, 0x58), r9 = rd(fd, 0x09);
+            int h = rd(fd, 0x58), r9 = rd(fd, 0x09), d = rd(fd, 0x15);
             if (h < 0) { msleep(200); continue; }
             int now = (h >> 1) & 1;
             if (now != last) { printf("%s  (0x58=0x%02x, 0x09=0x%02x)\n", now ? "OFF-HOOK" : "on-hook ", h, r9); fflush(stdout); last = now; }
-            msleep(100);
+            /* GVJackApp: 0x15 & 0x40 = digit present, & 0x0F = code (MT8870 style: 1-9, 0xA='0', 0xB='*', 0xC='#') */
+            int dv = d >= 0 && (d & 0x40);
+            if (dv && !lastd) {
+                static const char map[] = "D1234567890*#ABC";
+                printf("DTMF '%c'  (0x15=0x%02x)\n", map[d & 0x0F], d); fflush(stdout);
+            }
+            lastd = dv;
+            msleep(50);
         }
     } else if (!strcmp(mode, "inputs") || !strcmp(mode, "write")) {
         unsigned char r[128];
