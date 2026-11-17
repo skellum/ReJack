@@ -70,3 +70,6 @@ install the udev rule from `../HARDWARE.md`.
   attaches the recording where possible, and queues failed sends in an outbox (`rejack-emergency flush`).
 - The announcement must say plainly that 911 was **not** reached; text in `sounds/emergency.txt`,
   audio in `sounds/emergency.wav` (espeak-ng en-us → 8 kHz mono, 17 s, played twice).
+
+## License
+MIT — see [`../LICENSE`](../LICENSE).

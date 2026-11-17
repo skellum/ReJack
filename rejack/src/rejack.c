@@ -32,7 +32,7 @@
  * it — the line stays open: announcement, local recording, hook ("failed"), and on hang-up ("ended").
  * "verified" attempts 911 only while the status file says `verified <did> <time>` for
  * rejack_e911_did and is younger than rejack_e911_max_age.
- * Copyright (C) 2026 — Rejack project. License TBD.
+ * Copyright (c) 2026 Skellum. SPDX-License-Identifier: MIT (see ../../LICENSE)
  */
 #include <signal.h>
 #include <spawn.h>
