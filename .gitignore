@@ -1,0 +1,27 @@
+# Third-party sources and local builds
+ext/
+deps/
+rejack/build/
+*.o
+*.so
+
+# Device storage images (contain the vendor's copyrighted installer)
+images/
+
+# Local runtime state: recordings, alerts, E911 status, secrets
+rejack/run/recordings/
+rejack/run/e911
+rejack/run/emergency.env
+rejack/run/outbox/
+*.env
+!*.env.example
+
+# Compiled tools
+tools/tjprobe
+tools/aloop
+rejack/run/emergency.log
+rejack/run/config
+rejack/run/accounts
+rejack/run/contacts
+rejack/run/uuid
+rejack/run/current_contact
