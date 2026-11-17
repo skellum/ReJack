@@ -79,3 +79,39 @@ RING_X 0x0160, DC-DC power-up, calibration).
 - Sends them as SET_REPORT **Output** (wValue 0x0200); our descriptor has no Output report, and its
   "Method C" uses bRequest 0x03 (GET_PROTOCOL), not a feature write.
 - Takeaway: nothing new. Do not run its scripts against the A921.
+
+## Line-power research — 2026-11-16 (evening)
+
+### What the Windows "type 2" activation actually touches
+TjIpSys (HOME repo `protocol.md`, from the non-ARM DLL path) runs on SYS_OPEN for chip type 2 (reg 0x55 = 0x13,
+which is ours): `0x00 C0→40`, `0x02 20→00`, 128-byte clear at `0x57`, `0x3C=32`, `0x30..0x33 = 80 3E 00 7D`,
+`0x55=B4`. None of these are GPIO/AUX/divider registers — it looks like **codec/DSP init, not line power**.
+- The values `80 3E 00 7D 90 01` already exist in our chip at **0x4F–0x54** (and the HOME's GET page 0 shows the
+  same bytes plus our `0x40–0x4D` block `f4 01 0c fe … 99 01 40 1f 66 0f 0e 0f`). Our 0x30–0x33 read `34 E2 19 79`.
+  So either the sequence was never applied here, or TjIpSys register numbers don't map 1:1 to our read window.
+- `0x57` "128-byte clear" is risky to replay: unknown whether 0x57 is a FIFO port or a register range. Skipped.
+
+### Board evidence (Sandman magicJack tech bulletin, "Version 1" = first-gen dongle)
+Talk battery **50 V DC**, off-hook 4.1 V, loop current **12.5 mA**, ring **85 V AC square wave** (one unit 63 V).
+Sandman: https://www.sandman.com/knowledgebase/magic-jack-tech-bulletin
+A *square-wave* ring suggests polarity switching of the battery supply at ~20 Hz rather than a ProSLIC
+sine/trapezoid — consistent with discrete line circuitry driven by TigerJet GPIO (and with no ProSLIC answering SPI).
+
+### TigerJet GPIO state (Tiger560B register map; `tools/tjprobe gpio`)
+- Every GIO pin (0–14) and every AUX pin is an **input**; clock dividers A/B are **off** (0x17–0x19 = 0).
+  Nothing is actively driving line circuitry → consistent with an unpowered line.
+- The chip has hardware **clock dividers routable to GIO8/9/10** (`0x17/0x18` ratio, `0x19` source, `0x1a–0x1c`
+  output select). Divider B from 93.75 kHz or 1 kHz-class sources can make a 20 Hz square wave on a pin —
+  a plausible ring-cadence generator that matches the square-wave ring.
+- Inputs that changed on their own between reads (no writes in between): **GIO0 1→0** (0x0a a2→a0) and
+  **AUX1 1→0** (0x12 9e→9c). Candidates for line/hook/power sense — correlate with what changed physically.
+- `0x06` reads 0x66 after the SPI tests = same as `0x29` status → 0x06 looks like a status mirror (ignore).
+
+### Next experiments (in order of risk)
+1. **Read-only**: `tjprobe watch` while plugging/unplugging the phone, lifting the handset, base power on/off —
+   map which GIO/AUX inputs are sense lines.
+2. **Low risk (needs OK)**: `tjprobe activate snap.bin` — replays type-2 activation (minus 0x57), diffs registers;
+   `tjprobe restore snap.bin` or replug to undo. Watch LED / cordless "no line" indicator.
+3. **Medium risk (needs OK)**: GPIO output probing — set one pin at a time to output *at its current input level*
+   (no electrical change), then toggle briefly, watching sense inputs and the phone. Risk: contention if a pin
+   is driven externally. Start with pins pulled high (likely active-low enables).

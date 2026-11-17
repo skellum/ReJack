@@ -7,6 +7,17 @@ through a PC. The service and software are long gone, but the hardware still wor
 userspace replacement: the dongle plus any analog or cordless phone becomes a SIP phone on a service *you*
 choose, with no custom kernel driver and no magicJack account.
 
+## Backstory
+
+While cleaning out the garage I came across my old magicJack, the same one I used to pair with Google Voice
+back in the day. That setup is long dead, but the dongle still looked perfectly healthy. I plugged it into a
+Linux box just to see what would happen, and it showed up as a sound card and a keypad.
+
+*Hmm... this looks like a tinker-time tech project.*
+
+So here we are: no vendor software, no subscription, just old hardware I already own, an analog phone, and
+whatever cheap, legitimate phone service fits.
+
 > **Status: work in progress.** Audio and device control work over standard Linux drivers, and the phone
 > software builds and runs. Making the phone **ring** and powering the phone line are still being reverse
 > engineered — see [Status](#status).

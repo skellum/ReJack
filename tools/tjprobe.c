@@ -12,6 +12,13 @@
  *   tjprobe slic-reset Sets TJ reg 0x00 bit0 (release SLIC external reset), repeats the SLIC
  *                      reads, then restores reg 0x00. Writes exactly one TigerJet register.
  *
+ *   tjprobe gpio       Read-only. Decodes GPIO/AUX direction+level and clock dividers (Tiger560B map).
+ *   tjprobe activate [snapshot.bin]
+ *                      EXPERIMENT (writes): replay the TjIpSys "type 2" activation sequence
+ *                      (0x00 C0->40, 0x02 20->00, 0x3C=32, 0x30..0x33=80 3E 00 7D, 0x55=B4),
+ *                      skipping the 128-byte 0x57 clear. Saves all 128 registers first, prints a diff.
+ *   tjprobe restore snapshot.bin
+ *                      Writes back the activation-touched registers from a snapshot. (Replug = full reset.)
  *   tjprobe watch      Read-only. Prints HID input reports and TJ registers 0x00-0x7F that change.
  *
  * Framing (non-ARM TigerJet, 32-byte feature report, no report ID), from public RE work in
@@ -151,6 +158,28 @@ static void slic_report(int fd) {
     }
 }
 
+
+static int read_all(int fd, unsigned char *r /* 128 */) {
+    for (int bank = 0; bank < 4; bank++)
+        if (read_bank(fd, bank * 0x20, r + bank * 0x20)) return -1;
+    return 0;
+}
+
+static void diff_regs(const unsigned char *a, const unsigned char *b) {
+    int n = 0;
+    for (int i = 0; i < 128; i++)
+        if (a[i] != b[i]) { printf("  reg 0x%02x: %02x -> %02x\n", i, a[i], b[i]); n++; }
+    if (!n) printf("  (no register changed)\n");
+}
+
+static void gio_pair(const char *tag, int v, int p0) {
+    for (int k = 0; k < 4 && p0 + k <= 7; k++)
+        printf("  GIO%-2d %s level %d\n", p0 + k, (v >> (2 * k)) & 1 ? "OUTPUT" : "input ", (v >> (2 * k + 1)) & 1);
+    (void)tag;
+}
+
+static const unsigned char act_regs[] = { 0x00, 0x02, 0x30, 0x31, 0x32, 0x33, 0x3C, 0x55 };
+
 int main(int argc, char **argv) {
     const char *mode = argc > 1 ? argv[1] : "get";
     char path[300];
@@ -199,6 +228,62 @@ int main(int argc, char **argv) {
         r = write_regs(fd, 0x00, &orig, 1);
         printf("# restored TJ reg 0x00 = 0x%02x (%s), read back 0x%02x\n", orig,
                r ? strerror(-r) : "ok", tj_read(fd, 0x00));
+    } else if (!strcmp(mode, "gpio")) {
+        unsigned char r[128];
+        if (read_all(fd, r)) { printf("read failed\n"); return 1; }
+        printf("# reg 0x0a=0x%02x 0x0f=0x%02x (GIO0-7: direction/level)\n", r[0x0a], r[0x0f]);
+        gio_pair("", r[0x0a], 0); gio_pair("", r[0x0f], 4);
+        for (int k = 0; k < 2; k++) {
+            int v = r[0x10]; int p = 11 + k;
+            printf("  GIO%-2d %s level %d src %d\n", p, (v >> (2*k)) & 1 ? "OUTPUT" : "input ", (v >> (2*k+1)) & 1, (v >> (4+2*k)) & 3);
+        }
+        for (int k = 0; k < 2; k++) {
+            int v = r[0x11]; int p = 13 + k;
+            printf("  GIO%-2d %s level %d src %d\n", p, (v >> (2*k)) & 1 ? "OUTPUT" : "input ", (v >> (2*k+1)) & 1, (v >> (4+2*k)) & 3);
+        }
+        for (int p = 8; p <= 10; p++) {
+            int v = r[0x1a + p - 8];
+            printf("  GIO%-2d %s level %d src %d (0 reg, 1 divA, 2 divB)\n", p, v & 1 ? "OUTPUT" : "input ", (v >> 1) & 1, (v >> 2) & 3);
+        }
+        printf("  AUX7..0 data 0x%02x dir 0x%02x (1 = output)\n", r[0x12], r[0x13]);
+        printf("  clock divA ratio 0x%02x, divB ratio 0x%02x, ctl 0x%02x\n", r[0x17], r[0x18], r[0x19]);
+        printf("  ctl 0x00 = 0x%02x (EXTRST# %d)\n", r[0x00], r[0x00] & 1);
+    } else if (!strcmp(mode, "activate")) {
+        const char *snap = argc > 2 ? argv[2] : "tjsnapshot.bin";
+        unsigned char before[128], after[128];
+        static const struct { unsigned char reg, val; int wait_ms; } seq[] = {
+            { 0x00, 0xC0, 5 }, { 0x02, 0x20, 5 },
+            /* 0x57 128-byte clear skipped: unknown whether 0x57 is a port or a range */
+            { 0x00, 0x40, 10 }, { 0x02, 0x00, 5 },
+            { 0x3C, 0x32, 2 }, { 0x30, 0x80, 2 }, { 0x31, 0x3E, 2 }, { 0x32, 0x00, 2 },
+            { 0x33, 0x7D, 2 }, { 0x55, 0xB4, 20 },
+        };
+        if (read_all(fd, before)) { printf("snapshot read failed\n"); return 1; }
+        FILE *f = fopen(snap, "wb");
+        if (!f || fwrite(before, 1, 128, f) != 128) { perror(snap); return 1; }
+        fclose(f);
+        printf("# saved 128 registers to %s\n", snap);
+        for (size_t i = 0; i < sizeof seq / sizeof seq[0]; i++) {
+            int r = write_regs(fd, seq[i].reg, &seq[i].val, 1);
+            printf("  write 0x%02x = 0x%02x  %s\n", seq[i].reg, seq[i].val, r ? strerror(-r) : "ok");
+            msleep(seq[i].wait_ms);
+        }
+        msleep(200);
+        if (read_all(fd, after)) { printf("post-read failed (device re-enumerated?)\n"); return 1; }
+        printf("# register changes:\n");
+        diff_regs(before, after);
+        printf("# Now check: dongle LED, cordless 'no line' indicator, dial tone/hum when off-hook.\n"
+               "# Undo: tjprobe restore %s   (or unplug/replug the dongle)\n", snap);
+    } else if (!strcmp(mode, "restore")) {
+        unsigned char snapv[128], now[128];
+        FILE *f = argc > 2 ? fopen(argv[2], "rb") : NULL;
+        if (!f || fread(snapv, 1, 128, f) != 128) { fprintf(stderr, "usage: %s restore snapshot.bin\n", argv[0]); return 2; }
+        fclose(f);
+        for (size_t i = 0; i < sizeof act_regs; i++) {
+            int r = write_regs(fd, act_regs[i], &snapv[act_regs[i]], 1);
+            printf("  write 0x%02x = 0x%02x  %s\n", act_regs[i], snapv[act_regs[i]], r ? strerror(-r) : "ok");
+        }
+        if (!read_all(fd, now)) { printf("# remaining differences vs snapshot:\n"); diff_regs(snapv, now); }
     } else if (!strcmp(mode, "watch")) {
         /* Read-only: print HID input reports (hook/keys) and any TJ register 0x00-0x7F that changes.
          * Lift/hang up the handset and press keys while this runs. Ctrl-C to stop. */
@@ -231,7 +316,7 @@ int main(int argc, char **argv) {
             msleep(150);
         }
     } else {
-        fprintf(stderr, "usage: %s [get|regs|slic|slic-reset|watch]\n", argv[0]);
+        fprintf(stderr, "usage: %s [get|regs|gpio|slic|slic-reset|watch|activate [snap]|restore snap]\n", argv[0]);
         return 2;
     }
     close(fd);
