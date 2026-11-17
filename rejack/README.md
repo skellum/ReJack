@@ -15,10 +15,14 @@ and the analog phone plugged into it into a SIP phone. Project docs: `../PROJECT
 | `conf/config.rejack` | baresip config lines for Rejack | — |
 
 ## Status
-- State machine, tones, HID decoding, E911 status check: implemented, 90 unit checks passing.
+- State machine, tones, line-register decoding, E911 status check: implemented, 139 unit checks passing.
 - baresip glue: builds against baresip/libre **v4.12.0** in `../deps/`, loads in baresip (`run/` dev config).
-- `tjdev_ring()` / `tjdev_line_power()`: return `-ENOTSUP` until Phase 3 (RING.md) finds the mechanism.
-- HID input (hook/keypad) decoding follows the report descriptor; not yet confirmed on hardware.
+- Line control (`src/tjdev.c`, registers verified on hardware): hook `0x58` and DTMF `0x15` polled every 20 ms
+  (hook debounced over 3 polls), ring `0x3D`, dial tone from the chip's generator (`0x34` bit 6;
+  `rejack_dialtone sw` uses the baresip player instead). On start Rejack turns off the chip's automatic dial
+  tone (`0x34` bit 5) and restores it on exit, so a stopped Rejack leaves an ordinary "dial tone, goes nowhere"
+  line. A hard kill skips the restore: replug the dongle.
+- Not yet run with a SIP account.
 
 ## Build
 

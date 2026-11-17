@@ -143,11 +143,22 @@ Findings from the installer DLLs:
 - `magicJack.dll` only enumerates the device and checks USB hub power status (DeviceNotEnoughPower, DeviceCausedOvercurrent); it contains no ring code.
 - The softphone is built on **SJphone** (PDB paths `...\SJphone_branch\SJphone\Customers\...`).
 
-## Unknown / Needs Reverse Engineering
+## Phone line control (verified 2026-11-17 with a TS52 PRO buttset)
 
-- **Ring control**: how to make the handset ring. Likely a vendor-specific Feature report write (32-byte block via Interface 4 control transfer). Protocol unknown — needs Windows USB traffic capture via `usbmon` + Wireshark.
-- **LED state** (if any): unknown.
-- **Vendor Feature report format**: the 32-byte feature report on Interface 4 is vendor-defined. Contents unknown.
+The 32-byte vendor feature report gives TigerJet register access (`04 <reg> <reg&0xE0> <n> <data>`; read: select
+bank `04 BB BB 00`, then GET). The analog line needs **no initialisation**:
+
+| Function | Register | Notes |
+|---|---|---|
+| Talk battery | — | Always on: **34 V** on-hook, **14 mA** loop (cordless bases may still show "No Line") |
+| Automatic dial tone | `0x34` bit 5 | Power-up value `0x26`; tone on off-hook, cut on first digit |
+| Dial tone on command | `0x34` bit 6 | `|= 0x40` on, `&= 0x1F` all tone off |
+| Ring | `0x3D` bits 4+5 | `|= 0x30` ring, `&= 0xCF` stop; host does the 2 s / 4 s cadence |
+| Hook | `0x58` bit 1 | `0x03` off-hook, `0x01` on-hook; also HID report byte `0x09` bit 7 |
+| DTMF decoder | `0x15` | bit 6 = digit present, low nibble: 1–9, `A`=0, `B`=*, `C`=# |
+
+Full derivation (magicJack and GVJack drivers, test logs) in `RING.md`. Still unknown: ring voltage (Sandman's V1:
+~85 V square wave), LED control.
 
 ---
 

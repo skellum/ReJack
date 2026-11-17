@@ -247,3 +247,21 @@ Other bundled DLLs (`Dongle_Hw/Ut` = ProSLIC "ATA" dongles, `CM_HID*`, `BT_EX`, 
 - **Conclusion:** GVJack does nothing to enable line power either. Two independent drivers (magicJack, GVJack)
   agree that talk battery is not a software switch on this board → if the line reads 0 V after init, suspect the
   booster hardware (Q7 drive, C38, D8, L4). `tjprobe gvinit` replays GVJack's exact sequence for completeness.
+
+## Line test with TS52 PRO — 2026-11-17 — **line power works, no init needed**
+Dongle unplugged overnight, replugged, nothing written; TS52 PRO on a banjo (no phone).
+- **On-hook talk battery: 34 V DC** (cf. Nortel ~51 V, Pairgain ~43 V). **Off-hook loop current: 14 mA**
+  (Sandman's V1: 12.5 mA). The booster runs from power-up; there is no software line-enable (as both drivers implied).
+  Last night's VTech "No Line" was the cordless base/handset (its threshold, or the dead battery), not the dongle.
+- **Hardware dial tone (reg 0x34):** power-up value `0x26`.
+  - bit 5 (`0x20`) = **automatic dial tone on off-hook**, cut on the first DTMF digit (switch-like behaviour).
+    Cleared → silent line (loop current unchanged). magicJack's init clears it (`0x34 = (0x34&0x90)|0x06`); GVJack leaves it.
+  - bit 6 (`0x40`) = **dial tone on command** (`CTj560CPhone_Hid::PlayTone(DIALTONE,on)`: `0x34 |= 0x40`; off: `&= 0x1F`).
+  - Verified by ear: `34=06` → silent, `34=46` → tone, `34=06` → silent, `34=26` → back to automatic.
+- **Hook:** `0x58` = `0x03` off-hook / `0x01` on-hook (bit 1), 4/4 transitions; HID report byte `0x09` bit 7 mirrors it.
+- **DTMF:** `0x15` = `0xC1 C2 C3 CB CA CC` for 1 2 3 * 0 # — bit 6 present, low nibble digit (A=0, B=*, C=#). All 6 decoded.
+- Rejack plan: on start clear bit 5 and own dial tone (play it only when registered); hook from 0x58 bit 1;
+  digits from 0x15; with Rejack stopped the line still has battery + automatic dial tone.
+- **Ring:** `tjprobe ring 3` (`0x3D = 0x30` 2 s / `0x00` 4 s) → **TS52 PRO detected ring on all 3 bursts.** No init
+  needed. (Ring voltage not yet measured; Sandman's V1: ~85 V square wave.)
+- **Phase 3 is closed:** battery, dial tone, hook, DTMF and ring all work from power-up over HID registers.

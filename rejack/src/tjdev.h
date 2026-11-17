@@ -37,8 +37,48 @@ void tjdev_decode(const uint8_t raw[2], struct tj_input *in);
 int  tjdev_reg_read(struct tjdev *dev, uint8_t reg);
 int  tjdev_reg_write(struct tjdev *dev, uint8_t reg, uint8_t val);
 
-/* Line control. Phase 3 (RING.md) — currently return -ENOTSUP. */
-int  tjdev_line_power(struct tjdev *dev, bool on);
+/*
+ * Line control (registers verified on hardware 2026-11-17, see ../../RING.md):
+ *   talk battery  always on from power-up (~34 V on-hook, ~14 mA loop) — nothing to enable
+ *   0x34 bit 5    chip's automatic dial tone on off-hook (power-up default; cut on first digit)
+ *   0x34 bit 6    dial tone on command
+ *   0x3D bits 4+5 ring drive (H-bridge flips at ring frequency)
+ *   0x58 bit 1    off-hook
+ *   0x15          DTMF decoder: bit 6 = digit present, low nibble = code (1-9, A=0, B=*, C=#)
+ */
+
+/* Take over the line from the chip's standalone mode: automatic dial tone off, ring off.
+ * Remembers 0x34 so tjdev_release() can hand the line back. */
+int  tjdev_setup(struct tjdev *dev);
+/* Ring off, restore the chip's automatic dial tone (standalone line). */
+int  tjdev_release(struct tjdev *dev);
+
+int  tjdev_dialtone(struct tjdev *dev, bool on);
 int  tjdev_ring(struct tjdev *dev, bool on);
+
+/* Line state from register polling. */
+struct tj_line {
+	bool offhook;    /* debounced */
+	bool hook_changed;
+	char digit;      /* new DTMF digit (rising edge of 0x15 bit 6), or 0 */
+};
+
+/* Decoder state; zero-initialise. */
+struct tj_lstate {
+	bool    init;
+	bool    offhook;     /* debounced state */
+	bool    raw_last;
+	uint8_t stable;      /* consecutive polls raw == raw_last */
+	bool    dtmf_last;
+};
+
+#define TJ_HOOK_DEBOUNCE 3   /* polls (x 20 ms) */
+
+/* Pure decoder (unit-tested): feed one poll of regs 0x58 and 0x15. */
+void tjdev_line_decode(struct tj_lstate *s, uint8_t r58, uint8_t r15, struct tj_line *out);
+char tjdev_dtmf_char(uint8_t r15);   /* digit character for a 0x15 value with bit 6 set, else 0 */
+
+/* Read 0x58 + 0x15 and decode. Returns 0 or -errno. */
+int  tjdev_poll(struct tjdev *dev, struct tj_line *out);
 
 #endif
