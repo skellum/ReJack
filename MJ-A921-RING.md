@@ -1,3 +1,8 @@
+> **⚠️ Unverified AI-generated research.** This document was produced by Google Gemini and is kept for
+> reference only. Parts of it are wrong for this device — e.g. the controller chip is most likely a
+> TigerJet TJ580, not a TJ3201, and the A921's phone-line chip did not answer on the expected SPI port.
+> See [`RING.md`](RING.md) and [`HARDWARE.md`](HARDWARE.md) for what has actually been tested on hardware.
+
 # magicJack A921: Hardware Architecture & Ring Generation Notes
 
 **Model:** magicJack A921 (1st Generation / Silver USB Dongle, circa 2008)  
