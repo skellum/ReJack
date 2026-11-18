@@ -34,10 +34,15 @@ Public repo: https://github.com/skellum/ReJack (MIT). Keep personal data out of 
   "No Line" was the cordless set, not the dongle. Ring voltage not yet measured.
 - **Phase 4 (Rejack module)**: builds against baresip/libre **v4.12.0** in `deps/`, loads, opens the dongle.
   State machine, tones, register-polled hook/DTMF (20 ms, debounced), hardware dial tone + ring, E911 status
-  check: 139 unit checks pass. Smoke-tested on hardware (takes/returns the line). 911 policy: always attempt;
+  check: 139 unit checks pass. Runs against Asterisk as ext 100 (`rejack/run/start.sh`; account in gitignored
+  `rejack/run/accounts`). 911 policy: always attempt;
   contacts notified (ntfy + Telegram via `rejack/scripts/rejack-emergency`); if 911 can't go through →
   announcement (`rejack/sounds/emergency.wav`) + local recording + alerts. Not yet run with a SIP account.
-- **Phase 5+ (Asterisk, provider, packaging, integrations)**: not started. Provider leaning VoIP.ms.
+- **Phase 5 (phone server)**: Asterisk 20 (system package) configured from `pbx/` (`sudo pbx/install.sh`;
+  passwords in gitignored `pbx/secrets.env`). Rejack = ext 100 (baresip localhost-only, `net_interface 127.0.0.1`,
+  port 5070), Linphone 101 (cell) / 102 (desktop). **First calls 2026-11-17: both directions, clean audio, no echo.**
+  Next: unavailable/voicemail, systemd service, 911 fallback test, VoIP.ms trunk.
+- **Phase 6+ (packaging, integrations)**: not started.
 
 ## Working notes
 - Build/run: `deps/` holds libre + baresip (not committed; rebuild per `rejack/README.md`).

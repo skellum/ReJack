@@ -19,7 +19,8 @@ So here we are: no vendor software, no subscription, just old hardware I already
 whatever cheap, legitimate phone service fits.
 
 > **Status: work in progress.** The whole phone line works from Linux with no custom driver: talk battery,
-> dial tone, hook, touch-tone digits and **ringing**, all verified with a buttset. Next up: the first real call.
+> dial tone, hook, touch-tone digits and **ringing**, all verified with a buttset. **First calls made** between the
+> analog phone and a cell softphone through a home Asterisk server. Next up: a real phone number.
 
 ## How it works
 
@@ -47,7 +48,8 @@ whatever cheap, legitimate phone service fits.
 | Talk battery (34 V, 14 mA loop) and dial tone | ✅ Built into the dongle, on from power-up |
 | Hook, touch-tone digits, **ringing** | ✅ Verified on hardware — see [`RING.md`](RING.md) |
 | ReJack module (call logic, tones, 911 handling) | ✅ Builds against baresip 4.12, 139 unit checks pass |
-| First SIP call | ⏳ Next |
+| Calls through the home phone server (Asterisk) | ✅ Both directions, clean audio |
+| Real phone number (SIP provider) | ⏳ Next |
 | Phone server, provider, packaging | ⏳ Not started |
 
 ## 911
@@ -73,6 +75,7 @@ Register your address with your provider's E911 service before relying on this p
 | [`RING.md`](RING.md) | Ring and line-power reverse-engineering notes |
 | [`LEARNING_GUIDE.md`](LEARNING_GUIDE.md) | Walkthrough of the diagnostic output, written to teach |
 | [`rejack/`](rejack/) | The baresip module, tests, config, emergency notification script |
+| [`pbx/`](pbx/) | Home phone server: Asterisk config and installer |
 | [`tools/`](tools/) | `tjprobe` (register probe), `aloop` (audio test), `fat16x.py` (FAT16 extractor) |
 
 ## Getting started

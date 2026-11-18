@@ -22,7 +22,7 @@ and the analog phone plugged into it into a SIP phone. Project docs: `../PROJECT
   `rejack_dialtone sw` uses the baresip player instead). On start Rejack turns off the chip's automatic dial
   tone (`0x34` bit 5) and restores it on exit, so a stopped Rejack leaves an ordinary "dial tone, goes nowhere"
   line. A hard kill skips the restore: replug the dongle.
-- Not yet run with a SIP account.
+- Runs against the home Asterisk (`../pbx/`) as extension 100: calls verified in both directions.
 
 ## Build
 

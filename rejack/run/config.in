@@ -2,6 +2,8 @@
 # replacing @ROOT@ with the project directory. Edit this file, not ./config.
 poll_method             epoll
 sip_listen              127.0.0.1:5070
+# localhost only: Asterisk is the only SIP peer (an IP here bypasses baresip's loopback filter)
+net_interface           127.0.0.1
 call_accept             no
 audio_player            alsa,hw:TigerJet,0
 audio_source            alsa,hw:TigerJet,0
