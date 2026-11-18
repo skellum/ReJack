@@ -1,0 +1,72 @@
+; pjsip.conf — ReJack home PBX (rendered by pbx/install.sh; @...@ = from pbx/secrets.env)
+; Extensions: 100 = ReJack (magicJack + analog phone), 101 = Linphone (cell), 102 = PC softphone.
+; Reachable only from localhost, the LAN and Tailscale (acl below). Never port-forward 5060.
+
+[global]
+type=global
+user_agent=ReJack PBX
+endpoint_identifier_order=username,ip
+
+[transport-udp]
+type=transport
+protocol=udp
+bind=0.0.0.0:5060
+
+[acl-home]
+type=acl
+deny=0.0.0.0/0.0.0.0
+permit=127.0.0.1/255.255.255.255
+permit=@LAN_CIDR@
+
+; ---- templates ----
+[endpoint-tpl](!)
+type=endpoint
+context=rejack-phones
+disallow=all
+allow=ulaw,alaw
+direct_media=no
+rtp_symmetric=yes
+force_rport=yes
+rewrite_contact=yes
+dtmf_mode=rfc4733
+language=en
+
+[auth-tpl](!)
+type=auth
+auth_type=userpass
+
+[aor-tpl](!)
+type=aor
+max_contacts=1
+remove_existing=yes
+qualify_frequency=30
+
+; ---- 100: ReJack ----
+[100](endpoint-tpl)
+auth=100
+aors=100
+callerid="Home Phone" <100>
+[100](auth-tpl)
+username=100
+password=@PW_100@
+[100](aor-tpl)
+
+; ---- 101: Linphone on the cell ----
+[101](endpoint-tpl)
+auth=101
+aors=101
+callerid="Cell" <101>
+[101](auth-tpl)
+username=101
+password=@PW_101@
+[101](aor-tpl)
+
+; ---- 102: PC softphone ----
+[102](endpoint-tpl)
+auth=102
+aors=102
+callerid="PC" <102>
+[102](auth-tpl)
+username=102
+password=@PW_102@
+[102](aor-tpl)

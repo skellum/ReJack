@@ -181,7 +181,7 @@ Via standard Linux drivers (see `HARDWARE.md`):
 - [x] Ring on/off (`0x3D`) detected by TS52 PRO; cadence done by Rejack (2 s / 4 s)
 - [ ] Measure ring voltage
 
-### Phase 4 — Rejack daemon (baresip module)  *(skeleton in `rejack/`)*
+### Phase 4 — Rejack daemon (baresip module)  *(working: first calls 2026-11-17)*
 - [x] Target baresip/libre **v4.12.0** (Ubuntu's 1.0.0 is incompatible); sources in `ext/`
 - [x] Call state machine `rejack/src/phone.c` (dial tone, digit collection, `#`/timeout dialing, ringback,
       busy/reorder/howler, incoming ring → answer, 911 block) — unit tested
@@ -195,13 +195,18 @@ Via standard Linux drivers (see `HARDWARE.md`):
 - [x] Announcement WAV `rejack/sounds/emergency.wav` (espeak-ng → 8 kHz mono)
 - [x] Alert channels chosen: ntfy + Telegram (`rejack/conf/emergency.env.example`)
 - [ ] Recording vs call audio share the capture device — use ALSA dsnoop before bridging a contact (Phase 5)
-- [ ] udev rule so Rejack can open hidraw without root
-- [ ] Tone playback vs call audio both use `hw:TigerJet,0` — confirm tones are stopped before call audio opens
-- [ ] Echo canceller (webrtc_aec) on the line path
+- [x] udev rule so Rejack can open hidraw without root
+- [x] Tone playback vs call audio both use `hw:TigerJet,0` — tone stopped on BEVENT_CALL_ANSWERED/PROGRESS
+      (was dropping outgoing calls with EBUSY). Later: dmix/dsnoop so they can overlap
+- [ ] Echo canceller (webrtc_aec) on the line path — first calls (cell ↔ buttset) had no audible echo
 - [x] Hook + DTMF by register polling (20 ms, debounced); hardware dial tone; chip handed back on exit
 
-### Phase 5 — Phone server + provider
-- [ ] Asterisk with Rejack as an extension
+### Phase 5 — Phone server + provider  *(in progress, `pbx/`)*
+- [x] Asterisk 20 (Ubuntu) with Rejack as ext 100, Linphone cell 101 / desktop 102; echo test 600, 601;
+      LAN-only ACL; 911 = test congestion (no trunk). Calls verified both ways, clean audio
+- [ ] Unavailable / voicemail handling (mobile softphone drops registration in the background → 404)
+- [ ] systemd service for Rejack (start at boot; restore line on crash)
+- [ ] Exercise the 911 fallback path against the test congestion
 - [ ] VoIP.ms trunk; inbound/outbound routing; E911 or 911 block
 
 ### Phase 6 — Packaging

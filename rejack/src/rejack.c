@@ -486,6 +486,7 @@ static void poll_tick(void *arg)
 			(void)tjdev_dialtone(rj.dev, false);
 			rj.hw_dt_on = false;
 		}
+		info("rejack: digit '%c'\n", ln.digit);
 		feed(EV_DIGIT, ln.digit);
 	}
 	tmr_start(&rj.tmr_poll, POLL_MS, poll_tick, NULL);
@@ -536,8 +537,18 @@ static void event_handler(enum bevent_ev ev, struct bevent *event, void *arg)
 		break;
 
 	case BEVENT_CALL_PROGRESS:
-		if (is_ours(call))
+		if (is_ours(call)) {
+			op_tone(TONE_NONE, NULL);   /* free hw:TigerJet before early media opens it */
 			feed(EV_REMOTE_PROGRESS, 0);
+		}
+		break;
+
+	case BEVENT_CALL_ANSWERED:
+		/* Emitted before baresip starts call audio (ESTABLISHED comes after). Tones and call
+		 * audio share hw:TigerJet,0, so the ringback player must be closed now or the audio
+		 * start fails with EBUSY and the call drops. */
+		if (is_ours(call))
+			op_tone(TONE_NONE, NULL);
 		break;
 
 	case BEVENT_CALL_ESTABLISHED:
