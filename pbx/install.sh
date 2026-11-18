@@ -10,11 +10,11 @@ SECRETS="$DIR/secrets.env"
 [ -f "$SECRETS" ] || { echo "missing $SECRETS (see secrets.env.example)"; exit 1; }
 # shellcheck disable=SC1090
 . "$SECRETS"
-for v in LAN_CIDR PW_100 PW_101 PW_102; do [ -n "${!v:-}" ] || { echo "$v not set in $SECRETS"; exit 1; }; done
+for v in LAN_CIDR PW_100 PW_101 PW_102 VM_PIN_100 VM_PIN_101 VM_PIN_102; do [ -n "${!v:-}" ] || { echo "$v not set in $SECRETS"; exit 1; }; done
 
 BK="$ETC/rejack-backup-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$BK"
-for f in pjsip.conf extensions.conf rtp.conf; do [ -f "$ETC/$f" ] && cp -p "$ETC/$f" "$BK/"; done
+for f in pjsip.conf extensions.conf rtp.conf voicemail.conf modules.conf; do [ -f "$ETC/$f" ] && cp -p "$ETC/$f" "$BK/"; done
 echo "backup: $BK"
 
 tmp=$(mktemp)
@@ -22,10 +22,17 @@ sed -e "s|@LAN_CIDR@|$LAN_CIDR|" -e "s|@PW_100@|$PW_100|" -e "s|@PW_101@|$PW_101
     "$DIR/asterisk/pjsip.conf.in" > "$tmp"
 install -o asterisk -g asterisk -m 0640 "$tmp" "$ETC/pjsip.conf"
 rm -f "$tmp"
+tmp=$(mktemp)
+sed -e "s|@VM_PIN_100@|$VM_PIN_100|" -e "s|@VM_PIN_101@|$VM_PIN_101|" -e "s|@VM_PIN_102@|$VM_PIN_102|" \
+    "$DIR/asterisk/voicemail.conf.in" > "$tmp"
+install -o asterisk -g asterisk -m 0640 "$tmp" "$ETC/voicemail.conf"
+rm -f "$tmp"
+install -o asterisk -g asterisk -m 0640 "$DIR/asterisk/modules.conf" "$ETC/modules.conf"
 install -o asterisk -g asterisk -m 0640 "$DIR/asterisk/extensions.conf" "$ETC/extensions.conf"
 install -o asterisk -g asterisk -m 0640 "$DIR/asterisk/rtp.conf" "$ETC/rtp.conf"
 
 systemctl restart asterisk
 sleep 3
 asterisk -rx "pjsip show endpoints" | grep -E 'Endpoint:|Contact:' || true
+asterisk -rx "voicemail show users" || true
 echo "installed. Logs: sudo asterisk -rvvv"

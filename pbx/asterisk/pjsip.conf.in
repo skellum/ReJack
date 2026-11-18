@@ -50,6 +50,7 @@ callerid="Home Phone" <100>
 username=100
 password=@PW_100@
 [100](aor-tpl)
+mailboxes=100@default
 
 ; ---- 101: Linphone on the cell ----
 [101](endpoint-tpl)
@@ -60,6 +61,7 @@ callerid="Cell" <101>
 username=101
 password=@PW_101@
 [101](aor-tpl)
+mailboxes=101@default
 
 ; ---- 102: PC softphone ----
 [102](endpoint-tpl)
@@ -70,3 +72,4 @@ callerid="PC" <102>
 username=102
 password=@PW_102@
 [102](aor-tpl)
+mailboxes=102@default

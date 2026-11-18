@@ -44,7 +44,14 @@ Public repo: https://github.com/skellum/ReJack (MIT). Keep personal data out of 
   port 5070), Linphone 101 (cell) / 102 (desktop). **First calls 2026-11-17: both directions, clean audio, no echo.**
   Rejack runs as systemd `rejack.service` (`sudo rejack/systemd/install.sh`; logs `journalctl -u rejack -f`;
   after any stop `tools/tjprobe release` restores the chip's dial tone). Rejack retries the dongle every 2 s
-  (hot-plug). Next: unavailable/voicemail, 911 fallback test, VoIP.ms trunk.
+  (hot-plug).
+  **Voicemail: in progress (2026-11-18), written but not yet installed, tested or committed.** Files:
+  `pbx/asterisk/voicemail.conf.in` (PINs `VM_PIN_100..102` in `secrets.env`), `pbx/asterisk/modules.conf`
+  (noloads the imap/odbc voicemail variants and unused channels), `extensions.conf` (ring 25 s → `VoiceMail(u)`,
+  busy → `VoiceMail(b)`, `*97` = own mailbox without a PIN, `*98` = any mailbox with a PIN), and `mailboxes=` on the
+  aors in `pjsip.conf.in` for MWI. Next: the user runs `sudo pbx/install.sh`, then we test unavailable/no-answer/`*97`
+  and the Linphone MWI indicator, update the docs (pbx/README, ARCHITECTURE status, PROJECT Phase 5) and commit.
+  After that: 911 fallback test, VoIP.ms trunk, MWI stutter dial tone, caller ID, hook flash.
 - **Phase 6+ (packaging, integrations)**: not started.
 
 ## Working notes
