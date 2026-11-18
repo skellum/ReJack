@@ -84,6 +84,7 @@ Register your address with your provider's E911 service before relying on this p
 | Path | What's there |
 |---|---|
 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | What each piece does, a call end to end, BORSCHT mapping, gaps |
+| [`CHANGELOG.md`](CHANGELOG.md) | What changed when; pending roadmap |
 | [`PROJECT.md`](PROJECT.md) | Scope, decisions, phase checklists |
 | [`HARDWARE.md`](HARDWARE.md) | Device reference: USB interfaces, audio, HID layout, test results, udev rule |
 | [`RING.md`](RING.md) | Ring and line-power reverse-engineering notes |
