@@ -21,6 +21,7 @@
  *                      Writes back the activation-touched registers from a snapshot. (Replug = full reset.)
  *   tjprobe init580    Replays CTj580Phone_Hid::InitTjHardware() from magicJack's macOS driver exactly:
  *                      0x01=E1,59 (unlock) ... 0x01=FF,00 (lock). Read-modify-write where the driver does.
+ *   tjprobe release    Ring off and the chip's automatic dial tone back on (standalone line). Used by systemd.
  *   tjprobe gvinit     Replays GVJackApp v2's PhoneJack init (Windows, 2013): like init580 but 0x32/0x33
  *                      written unconditionally, 0x3D=00, and the chip left unlocked.
  *   tjprobe ring [cycles]   CTj560CPhone_Hid::Ring(): 0x3D |= 0x30 for 2 s, then &= 0xCF, 4 s off.
@@ -324,6 +325,16 @@ int main(int argc, char **argv) {
         wr(fd, 0x01, 0xFF);  wr(fd, 0x01, 0x00);      /* lock */
         msleep(200);
         if (!read_all(fd, after)) { printf("# register changes:\n"); diff_regs(before, after); }
+    } else if (!strcmp(mode, "release")) {
+        /* Hand the line back to the chip's standalone mode (what Rejack's tjdev_release() does):
+         * ring off, forced dial tone off, automatic dial tone on. Used by the systemd unit after
+         * Rejack stops for any reason, including a crash. */
+        int r3d = rd(fd, 0x3D), r34 = rd(fd, 0x34);
+        if (r3d < 0 || r34 < 0) { printf("read failed\n"); return 1; }
+        wr(fd, 0x3D, (unsigned char)(r3d & 0xCF));
+        wr(fd, 0x34, (unsigned char)((r34 & ~0x40) | 0x20));
+        printf("released: 0x3d 0x%02x -> 0x%02x, 0x34 0x%02x -> 0x%02x\n",
+               r3d, r3d & 0xCF, r34, (r34 & ~0x40) | 0x20);
     } else if (!strcmp(mode, "gvinit")) {
         /* GVJackApp v2 (Windows, 2013) TigerJet/PhoneJack init @ 0x415aec: unconditional 0x32/0x33,
          * ring-off = 0x3D := 0x00, and the chip is left UNLOCKED (no 0x01=FF,00). */

@@ -1,0 +1,31 @@
+# rejack.service — ReJack (baresip + rejack.so) as a system service.  Rendered and installed by
+# rejack/systemd/install.sh: @ROOT@ = project checkout, @USER@ = account that runs it (needs the
+# `audio` group for /dev/magicjack-hid and hw:TigerJet,0).
+[Unit]
+Description=ReJack — magicJack A921 analog phone line (baresip)
+Documentation=file://@ROOT@/ARCHITECTURE.md
+After=network-online.target sound.target asterisk.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+Group=audio
+WorkingDirectory=@ROOT@
+ExecStart=@ROOT@/rejack/run/start.sh
+# Hand the line back to the chip (automatic dial tone on, ring off) after ANY stop — clean exit or crash.
+# '-' = don't fail the unit if the dongle is unplugged.
+ExecStopPost=-@ROOT@/tools/tjprobe release
+KillSignal=SIGINT
+TimeoutStopSec=10
+Restart=on-failure
+RestartSec=5
+StandardInput=null
+# Hardening: ReJack only needs its checkout (run/ state, recordings) and the dongle.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=@ROOT@/rejack/run
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

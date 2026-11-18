@@ -69,7 +69,8 @@ struct rejack {
 	struct ua     *ua;           /* UA of the current call */
 	struct call   *call;         /* current call, or NULL */
 	struct tmr     tmr_poll;     /* hook/DTMF register poll */
-	bool           poll_warned;
+	int            poll_fails;   /* consecutive register poll errors */
+	bool           attach_warned;
 	bool           hw_dialtone;  /* dial tone from the chip (rejack_dialtone hw) */
 	bool           hw_dt_on;
 
@@ -439,6 +440,25 @@ static void feed(enum ph_event ev, char digit)
 		     phone_event_str(ev), phone_state_str(rj.ph.st));
 }
 
+#define ATTACH_RETRY_MS 2000
+#define POLL_FAIL_MAX   3        /* consecutive poll errors before we treat the dongle as gone */
+
+static void poll_tick(void *arg);
+static void dev_attach(void *arg);
+
+/* Dongle gone (unplugged, USB reset): end any call, then keep retrying until it comes back. */
+static void dev_lost(const char *why)
+{
+	warning("rejack: magicJack lost (%s) — retrying every %d s\n", why, ATTACH_RETRY_MS / 1000);
+	rj.fhs = fd_close(rj.fhs);
+	tjdev_close(rj.dev);
+	rj.dev = NULL;
+	rj.hw_dt_on = false;
+	rj.poll_fails = 0;
+	feed(EV_ONHOOK, 0);              /* the phone can't be off-hook on a missing line */
+	tmr_start(&rj.tmr_poll, ATTACH_RETRY_MS, dev_attach, NULL);
+}
+
 /* The interrupt report's keypad field belongs to TigerJet's USB handsets; for an analog phone the
  * line state comes from registers (poll_tick). Drain reports so the fd doesn't stay readable, and use
  * the fd to notice an unplug. */
@@ -449,16 +469,40 @@ static void hid_handler(int flags, void *arg)
 	(void)arg;
 
 	if (flags & FD_EXCEPT) {
-		warning("rejack: hidraw exception — device unplugged?\n");
-		rj.fhs = fd_close(rj.fhs);
+		dev_lost("hidraw exception");
 		return;
 	}
 	while ((r = tjdev_read_input(rj.dev, &in)) > 0)
 		;
-	if (r < 0) {
-		warning("rejack: hidraw read error (%m)\n", -r);
-		rj.fhs = fd_close(rj.fhs);
+	if (r < 0)
+		dev_lost("hidraw read error");
+}
+
+/* Open the dongle and take the line. Called at start and after a loss; retries until it works. */
+static void dev_attach(void *arg)
+{
+	int err;
+	(void)arg;
+
+	err = tjdev_open(&rj.dev, strcmp(rj.hid, "auto") ? rj.hid : NULL);
+	if (err) {
+		if (!rj.attach_warned)
+			warning("rejack: magicJack not found (%m) — waiting for it\n", -err);
+		rj.attach_warned = true;
+		tmr_start(&rj.tmr_poll, ATTACH_RETRY_MS, dev_attach, NULL);
+		return;
 	}
+	rj.attach_warned = false;
+	info("rejack: using %s\n", tjdev_path(rj.dev));
+
+	err = tjdev_setup(rj.dev);       /* we own dial tone and ring from here on */
+	if (err)
+		warning("rejack: line setup failed (%m)\n", -err);
+	err = fd_listen(&rj.fhs, tjdev_fd(rj.dev), FD_READ, hid_handler, NULL);
+	if (err)
+		warning("rejack: fd_listen failed (%m); unplug detection by polling only\n", err);
+	rj.poll_fails = 0;
+	tmr_start(&rj.tmr_poll, POLL_MS, poll_tick, NULL);
 }
 
 static void poll_tick(void *arg)
@@ -469,16 +513,14 @@ static void poll_tick(void *arg)
 
 	err = tjdev_poll(rj.dev, &ln);
 	if (err) {
-		if (!rj.poll_warned)
-			warning("rejack: register poll failed (%m)\n", -err);
-		rj.poll_warned = true;
-		tmr_start(&rj.tmr_poll, 1000, poll_tick, NULL);   /* back off */
+		if (++rj.poll_fails >= POLL_FAIL_MAX) {
+			dev_lost("register poll failing");
+			return;
+		}
+		tmr_start(&rj.tmr_poll, 200, poll_tick, NULL);
 		return;
 	}
-	if (rj.poll_warned) {
-		info("rejack: register poll recovered\n");
-		rj.poll_warned = false;
-	}
+	rj.poll_fails = 0;
 	if (ln.hook_changed)
 		feed(ln.offhook ? EV_OFFHOOK : EV_ONHOOK, 0);
 	if (ln.digit) {
@@ -647,21 +689,7 @@ static int module_init(void)
 	tmr_init(&tmr_reap);
 	(void)op_e911_ok(NULL);                   /* log current E911 status at startup */
 
-	err = tjdev_open(&rj.dev, strcmp(rj.hid, "auto") ? rj.hid : NULL);
-	if (err) {
-		warning("rejack: cannot open magicJack HID device (%m)\n", -err);
-		return -err;
-	}
-	info("rejack: using %s\n", tjdev_path(rj.dev));
-
-	err = tjdev_setup(rj.dev);       /* we own dial tone and ring from here on */
-	if (err)
-		warning("rejack: line setup failed (%m)\n", -err);
-	tmr_start(&rj.tmr_poll, POLL_MS, poll_tick, NULL);
-
-	err = fd_listen(&rj.fhs, tjdev_fd(rj.dev), FD_READ, hid_handler, NULL);
-	if (err)
-		goto fail;
+	dev_attach(NULL);                         /* retries in the background if the dongle is absent */
 
 	err = bevent_register(event_handler, NULL);
 	if (err)
