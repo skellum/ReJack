@@ -1,0 +1,23 @@
+; voicemail.conf — ReJack home PBX (rendered by pbx/install.sh; PINs from pbx/secrets.env)
+; Messages live in /var/spool/asterisk/voicemail/default/<ext>/INBOX as 8 kHz WAV.
+
+[general]
+format=wav
+attach=no                 ; no mail server; notifications come later (ntfy/Telegram via externnotify)
+maxmsg=100
+maxsecs=300               ; longest message, seconds
+minsecs=2                 ; shorter = discarded (hang-ups)
+maxsilence=10             ; stop recording after 10 s of silence
+silencethreshold=128
+maxlogins=3
+review=no
+operator=no
+saycid=yes                ; announce who called before each message
+envelope=yes              ; announce date/time
+sayduration=yes
+sayduration_minimum=1
+
+[default]
+100 => @VM_PIN_100@,Home Phone
+101 => @VM_PIN_101@,Cell
+102 => @VM_PIN_102@,PC
