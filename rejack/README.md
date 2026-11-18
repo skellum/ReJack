@@ -55,6 +55,16 @@ rejack/run/start.sh            # baresip + Rejack with config, alerts and record
 Fill in `rejack/run/emergency.env` (ntfy URL, Telegram token/chat id), then
 `REJACK_EMERGENCY_ENV=rejack/run/emergency.env rejack/scripts/rejack-emergency test`.
 
+## Run as a service (systemd)
+```
+sudo rejack/systemd/install.sh     # renders rejack/systemd/rejack.service.in, enables + starts rejack.service
+journalctl -u rejack -f
+```
+Runs `rejack/run/start.sh` as the invoking user (needs the `audio` group). Restarts on failure; after any stop,
+`tools/tjprobe release` hands the line back to the chip. If the dongle is missing or unplugged, Rejack keeps
+running, ends any call, and re-attaches within ~2 s when it returns (baresip would otherwise run on silently
+without a module that failed to load).
+
 ## Run (installed)
 ```
 LD_LIBRARY_PATH=$PREFIX/lib $PREFIX/bin/baresip     # first run writes ~/.baresip/config

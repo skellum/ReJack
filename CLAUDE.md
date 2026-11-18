@@ -42,7 +42,9 @@ Public repo: https://github.com/skellum/ReJack (MIT). Keep personal data out of 
 - **Phase 5 (phone server)**: Asterisk 20 (system package) configured from `pbx/` (`sudo pbx/install.sh`;
   passwords in gitignored `pbx/secrets.env`). Rejack = ext 100 (baresip localhost-only, `net_interface 127.0.0.1`,
   port 5070), Linphone 101 (cell) / 102 (desktop). **First calls 2026-11-17: both directions, clean audio, no echo.**
-  Next: unavailable/voicemail, systemd service, 911 fallback test, VoIP.ms trunk.
+  Rejack runs as systemd `rejack.service` (`sudo rejack/systemd/install.sh`; logs `journalctl -u rejack -f`;
+  after any stop `tools/tjprobe release` restores the chip's dial tone). Rejack retries the dongle every 2 s
+  (hot-plug). Next: unavailable/voicemail, 911 fallback test, VoIP.ms trunk.
 - **Phase 6+ (packaging, integrations)**: not started.
 
 ## Working notes

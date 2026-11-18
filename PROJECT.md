@@ -205,7 +205,8 @@ Via standard Linux drivers (see `HARDWARE.md`):
 - [x] Asterisk 20 (Ubuntu) with Rejack as ext 100, Linphone cell 101 / desktop 102; echo test 600, 601;
       LAN-only ACL; 911 = test congestion (no trunk). Calls verified both ways, clean audio
 - [ ] Unavailable / voicemail handling (mobile softphone drops registration in the background → 404)
-- [ ] systemd service for Rejack (start at boot; restore line on crash)
+- [x] systemd service for Rejack (`rejack/systemd/`): boot start, restart on crash, `tjprobe release` after any
+      stop; Rejack itself survives unplug/replug (retries every 2 s). Verified: call, unplug mid-call, stop
 - [ ] Exercise the 911 fallback path against the test congestion
 - [ ] VoIP.ms trunk; inbound/outbound routing; E911 or 911 block
 

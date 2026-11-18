@@ -156,6 +156,8 @@ int tjdev_reg_read(struct tjdev *dev, uint8_t reg)
 	uint8_t bank = reg & 0xE0, data[REPORT_LEN];
 	int err;
 
+	if (!dev)
+		return -ENODEV;
 	if (dev->bank != bank) {
 		const uint8_t sel[4] = { 0x04, bank, bank, 0x00 };
 		if ((err = set_feature(dev, sel, 4)) < 0)
@@ -172,6 +174,8 @@ int tjdev_reg_write(struct tjdev *dev, uint8_t reg, uint8_t val)
 {
 	const uint8_t p[5] = { 0x04, reg, (uint8_t)(reg & 0xE0), 0x01, val };
 
+	if (!dev)
+		return -ENODEV;
 	dev->bank = -1;   /* a write may change the device's selected bank */
 	return set_feature(dev, p, 5);
 }
@@ -198,7 +202,11 @@ int tjdev_setup(struct tjdev *dev)
 
 int tjdev_release(struct tjdev *dev)
 {
-	int err = tjdev_ring(dev, false);
+	int err;
+
+	if (!dev)
+		return -ENODEV;
+	err = tjdev_ring(dev, false);
 	uint8_t v = dev->saved34 >= 0 ? (uint8_t)dev->saved34 : 0x26;   /* 0x26 = power-up value */
 
 	if (!err)
