@@ -33,11 +33,24 @@ whatever cheap, legitimate phone service fits.
 ```
 
 - The A921 shows up on Linux as a standard **USB audio card** (8 kHz voice in and out) and a **USB HID device**
-  (hook switch, keypad, and a vendor report that gives access to the chip's registers).
+  whose vendor report gives access to the chip's registers: hook state, decoded touch-tone digits, ringing and
+  dial tone. Talk battery is built in and always on.
 - **ReJack** is a [baresip](https://github.com/baresip/baresip) module written in C. It turns hook and keypad
   events into calls, plays dial tone, ringback and busy tones, rings the phone, and answers incoming calls.
 - A home phone server sits in the middle, so the SIP provider can be swapped and integrations can be added
   without touching the phone software.
+
+### How the pieces fit
+
+| Piece | Role | Telephone-company equivalent |
+|---|---|---|
+| **magicJack A921** | Battery feed, ringing, hook sense, DTMF receiver, codec | Line card plus its ringing generator |
+| **ReJack** (baresip module) | Reads hook and digits, keys ringing, plays dial tone, ringback and busy, carries the voice, handles the 911 fallback | Line drawer controller, plus a few switch functions |
+| **Asterisk** | Registrations, dial plan, routing; later the phone number, voicemail and integrations | The switch |
+| **Softphones** (Linphone) | More extensions: cell, PC | Other lines on the switch |
+
+Anything about the copper pair is ReJack's job; anything about where a call goes is Asterisk's. The full map, with
+a call walked end to end, a BORSCHT breakdown and what's still missing, is in [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Status
 
@@ -70,7 +83,8 @@ Register your address with your provider's E911 service before relying on this p
 
 | Path | What's there |
 |---|---|
-| [`PROJECT.md`](PROJECT.md) | Scope, architecture, decisions, phase checklists |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | What each piece does, a call end to end, BORSCHT mapping, gaps |
+| [`PROJECT.md`](PROJECT.md) | Scope, decisions, phase checklists |
 | [`HARDWARE.md`](HARDWARE.md) | Device reference: USB interfaces, audio, HID layout, test results, udev rule |
 | [`RING.md`](RING.md) | Ring and line-power reverse-engineering notes |
 | [`LEARNING_GUIDE.md`](LEARNING_GUIDE.md) | Walkthrough of the diagnostic output, written to teach |
