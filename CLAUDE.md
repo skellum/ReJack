@@ -6,6 +6,7 @@
 Public repo: https://github.com/skellum/ReJack (MIT). Keep personal data out of committed files: no usernames/home paths (use relative paths or `/home/user/ReJack` as an example), no device serial (masked `A921XXXXXXXXXX`), no server hostnames (say "ServerName"), no secrets (`*.env` is gitignored; only `*.env.example` is committed).
 
 ## Read these first in a new session
+- `ARCHITECTURE.md` — what runs where, who does what (ReJack vs Asterisk vs magicJack), a call end to end
 - `PROJECT.md` — scope, architecture, decisions table, phase checklists, open questions
 - `HARDWARE.md` — device identity, interface map, audio specs + test results, HID bit layout, udev rule
 - `RING.md` — ring/line-power research: protocol framing, sources, probe results, next steps
