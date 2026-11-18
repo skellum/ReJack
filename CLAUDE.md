@@ -7,6 +7,7 @@ Public repo: https://github.com/skellum/ReJack (MIT). Keep personal data out of 
 
 ## Read these first in a new session
 - `ARCHITECTURE.md` — what runs where, who does what (ReJack vs Asterisk vs magicJack), a call end to end
+- `CHANGELOG.md` — what changed when, plus the pending roadmap
 - `PROJECT.md` — scope, architecture, decisions table, phase checklists, open questions
 - `HARDWARE.md` — device identity, interface map, audio specs + test results, HID bit layout, udev rule
 - `RING.md` — ring/line-power research: protocol framing, sources, probe results, next steps
