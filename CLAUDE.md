@@ -8,7 +8,8 @@ Public repo: https://github.com/skellum/ReJack (MIT). Keep personal data out of 
 ## Read these first in a new session
 - `ARCHITECTURE.md` — what runs where, who does what (ReJack vs Asterisk vs magicJack), a call end to end
 - `CHANGELOG.md` — what changed when, plus the pending roadmap
-- `PROJECT.md` — scope, architecture, decisions table, phase checklists, open questions
+- `PROJECT.md` — scope, architecture, decisions table, phase checklists, open questions, household phones plan
+- `INTEGRATIONS.md` — Switchboard spec: Discord voice bridge, OpenClaw phone agent
 - `HARDWARE.md` — device identity, interface map, audio specs + test results, HID bit layout, udev rule
 - `RING.md` — ring/line-power research: protocol framing, sources, probe results, next steps
 - `rejack/README.md` — module layout, build, run, 911 behaviour
@@ -46,14 +47,19 @@ Public repo: https://github.com/skellum/ReJack (MIT). Keep personal data out of 
   Rejack runs as systemd `rejack.service` (`sudo rejack/systemd/install.sh`; logs `journalctl -u rejack -f`;
   after any stop `tools/tjprobe release` restores the chip's dial tone). Rejack retries the dongle every 2 s
   (hot-plug).
-  **Voicemail: in progress (2026-11-18), written but not yet installed, tested or committed.** Files:
+  **Voicemail: committed (`33c866d`) and installed (`sudo pbx/install.sh`, 2026-11-18), not yet tested.** Files:
   `pbx/asterisk/voicemail.conf.in` (PINs `VM_PIN_100..102` in `secrets.env`), `pbx/asterisk/modules.conf`
   (noloads the imap/odbc voicemail variants and unused channels), `extensions.conf` (ring 25 s → `VoiceMail(u)`,
   busy → `VoiceMail(b)`, `*97` = own mailbox without a PIN, `*98` = any mailbox with a PIN), and `mailboxes=` on the
-  aors in `pjsip.conf.in` for MWI. Next: the user runs `sudo pbx/install.sh`, then we test unavailable/no-answer/`*97`
-  and the Linphone MWI indicator, update the docs (pbx/README, ARCHITECTURE status, PROJECT Phase 5) and commit.
+  aors in `pjsip.conf.in` for MWI. Next: test unavailable/no-answer/`*97`
+  and the Linphone MWI indicator (confirm `app_voicemail` loaded first), then update the docs (pbx/README,
+  ARCHITECTURE status, PROJECT Phase 5).
   After that: 911 fallback test, VoIP.ms trunk, MWI stutter dial tone, caller ID, hook flash.
-- **Phase 6+ (packaging, integrations)**: not started.
+- **Phase 6+ (packaging, household phones, integrations)**: not started; planned 2026-11-18.
+  Household: VTech CM18445 4-line system on 4 A921 dongles, one line/extension per person (`PROJECT.md`,
+  Household phones); first step is a line-1 compatibility test (34 V line). Integrations spec in
+  `INTEGRATIONS.md`: Switchboard (Node/TS, ARI) with a Discord voice bridge (ext 700) and OpenClaw phone agent
+  (ext 800, agent-originated calls).
 
 ## Working notes
 - Build/run: `deps/` holds libre + baresip (not committed; rebuild per `rejack/README.md`).

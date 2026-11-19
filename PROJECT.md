@@ -210,11 +210,53 @@ Via standard Linux drivers (see `HARDWARE.md`):
 - [ ] Exercise the 911 fallback path against the test congestion
 - [ ] VoIP.ms trunk; inbound/outbound routing; E911 or 911 block
 
-### Phase 6 — Packaging
+### Phase 6 — Packaging + household phones
 - [ ] udev rules, systemd service, config file
+- [ ] Multi-dongle Rejack (see Household phones below): per-port udev names, configurable HID path + ALSA card,
+      systemd template `rejack@.service`, one baresip account/port per instance
 
-### Phase 7 — Integrations (Switchboard)
-- [ ] Home Assistant / MQTT events; softphones; doorbell; AI agent bridge
+### Phase 7 — Integrations (Switchboard) — spec: `INTEGRATIONS.md`
+- [ ] Switchboard core: Node/TS service on the PBX box, Asterisk ARI + `externalMedia` audio
+- [ ] Discord: dial 700 → bridge to one voice channel on our server (`/ring-house` optional, off by default)
+- [ ] OpenClaw: agent calls you (TTS + DTMF reply); dial 800 to talk to the agent (STT → agent → TTS)
+- [ ] Later: Home Assistant / MQTT events; doorbell
+
+---
+
+## Household phones (planned 2026-11-18)
+
+Each person gets their own line and extension. Hardware: a used **VTech CM18445** 4-line DECT system (console +
+3 cordless handsets, about $40) fed by **4 A921 dongles** (one per CM18445 line, about $9 each). The console sits
+in the office next to the PBX box and acts as the DECT base for the handsets.
+
+| CM18445 line | Dongle | Ext | Phone | Who |
+|---|---|---|---|---|
+| 1 | A921 #1 (current) | 100 | Console (corded) | Office |
+| 2 | A921 #2 | 111 | Handset 1 | Wife's office (usage TBD; may also ring her cell softphone) |
+| 3 | A921 #3 | 120 | Handset 2 | Boy 1 |
+| 4 | A921 #4 | 121 | Handset 3 | Boy 2 |
+| — | — | — | Extra CM18045 handset (optional) | Kitchen: shared, set to "all lines" |
+
+Each station's "line mode" is set to its own line. The old VTech CS6719 can't join the CM18445 and is retired
+from this plan.
+
+**Dialplan features**
+- Direct: dial 100 / 111 / 120 / 121. The boys can call each other by extension (or use the VTech's built-in
+  intercom, which doesn't touch Asterisk).
+- **129** = both boys' rooms ring, first to answer takes the call.
+- **128** = both boys conference together with the caller (ConfBridge).
+- **200** = whole-house ring group (the main number, once there is a trunk).
+- Extensions 110–129 need a dialplan change: the current `_10X` pattern only covers 100–109.
+- Possible kids' rules: quiet hours, outside-call allowlist, no trunk access.
+
+**Steps / risks**
+1. **Line-1 compatibility test first** (before buying more dongles): CM18445 on the current A921. Does the console
+   accept 34 V on-hook (the CS6719 showed "No Line")? Does it detect ring and dial out? Does a station ring only
+   on its assigned line?
+2. Buy A921s specifically (or verify `06e6:c200` and chip type reg `0x55` = `0x13`). Other magicJack models are
+   unverified.
+3. Multi-dongle Rejack (Phase 6). Hub power: 4 dongles ringing at once needs a powered USB 2.0 hub (2–3 A).
+   Dongles must be on the high-speed (EHCI) buses.
 
 ---
 
@@ -236,7 +278,8 @@ Via standard Linux drivers (see `HARDWARE.md`):
 2. Provider: VoIP.ms (leaning) — confirm current pricing at signup.
 3. ~~911 policy~~ → decided: always attempt 911; notify contacts; record + alert if it can't go through.
 4. Does the A921 detect DTMF from the analog phone on-chip (HID keypad field), or must Rejack decode DTMF from audio?
-5. AI agents: what does the OpenClaw deployment expose (API, webhooks, realtime voice)?
+5. ~~AI agents: what does OpenClaw expose?~~ → researched 2026-11-18: OpenAI-compatible `/v1/chat/completions`, `/hooks/agent` webhooks, skills; its voice-call plugin is Twilio/Telnyx/Plivo only (no SIP), so Switchboard runs its own STT/TTS loop (`INTEGRATIONS.md`).
+6. Household: does the CM18445 work on the A921's 34 V line? (line-1 test)
 
 ---
 
@@ -258,3 +301,4 @@ Via standard Linux drivers (see `HARDWARE.md`):
 | 2026-11-16 | Initial creation. Hardware enumeration complete. HID descriptor decoded. No custom driver required. |
 | 2026-11-16 | Decided: C/C++, hardware ring. Proposed: epoll + audio thread, G.711 μ-law 8 kHz. |
 | 2026-11-16 | Named **Rejack**. Scope defined (MVP landline + 911 policy). Architecture: home phone server + Rejack as baresip-based SIP extension. Service options and integration feasibility recorded. |
+| 2026-11-18 | Integrations spec (`INTEGRATIONS.md`): Switchboard core, Discord voice bridge, OpenClaw phone agent. Household phones plan: CM18445 + 4 dongles, one line/extension per person. |

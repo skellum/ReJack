@@ -8,6 +8,11 @@ Newest first. Commit hashes refer to this repository.
 
 ## [Unreleased]: in progress
 
+**Integrations spec and household plan** (2026-11-18, docs only)
+- 💡 `INTEGRATIONS.md`: Switchboard (Node/TS, Asterisk ARI + externalMedia), Discord voice bridge, OpenClaw phone
+  agent (OpenAI-compatible API + local STT/TTS; its voice-call plugin has no SIP support).
+- 💡 Household phones in `PROJECT.md`: CM18445 4-line system on 4 dongles; ring group 129 / conference 128 for the boys.
+
 **Voicemail on Asterisk** (`33c866d`, WIP, not yet installed or tested)
 - 💡 Ring 25 s. On no answer or no registration the caller gets the "unavailable" greeting; on busy, the "busy"
   greeting.
@@ -122,7 +127,9 @@ Newest first. Commit hashes refer to this repository.
 | post-MVP | 💡 Caller ID (Bell 202 FSK between rings, also sets the phone's clock) | Proposed |
 | post-MVP | 💡 Hook flash (call waiting, transfer) | Proposed |
 | 6 | ⏳ Packaging (udev + systemd + config as an installable unit) | Pieces exist; not packaged yet |
-| 7 | 💡 Switchboard/"Ansible" integrations: Home Assistant/MQTT, doorbell, Discord, Telegram alerts, AI agent bridge on ServerName | Proposed |
+| 6 | 💡 Household phones: VTech CM18445 + 4 dongles, one line/extension each (office, wife, both boys) | Line-1 compatibility test first; see `PROJECT.md` |
+| 6 | 💡 Multi-dongle Rejack (`rejack@.service`, per-port device names) | Needed for household phones |
+| 7 | 💡 Switchboard: Discord voice bridge (ext 700), OpenClaw agent calls / dial-the-agent (ext 800) | Spec in `INTEGRATIONS.md` |
+| 7 | 💡 Switchboard: Home Assistant/MQTT, doorbell, Telegram alerts | Proposed |
 
-**Still open:** the VoIP.ms choice and its pricing, and what the AI agent platform on ServerName exposes (API,
-webhooks, realtime voice).
+**Still open:** the VoIP.ms choice and its pricing; whether the CM18445 accepts the A921's 34 V line.
