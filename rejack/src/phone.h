@@ -74,7 +74,7 @@ struct ph_config {
 	unsigned dialtone_ms;   /* off-hook with no digits before reorder (default 15000) */
 	unsigned interdigit_ms; /* pause that ends dialing (default 4000) */
 	unsigned howler_ms;     /* reorder before howler (default 30000) */
-	enum ph_e911 e911;      /* emergency-call policy (see PROJECT.md 911 policy) */
+	enum ph_e911 e911;      /* emergency-call policy (see ARCHITECTURE.md, 911) */
 };
 
 #define PH_MAX_DIGITS 32

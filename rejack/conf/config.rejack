@@ -13,7 +13,7 @@ auplay_channels         1
 module_path             /home/user/ReJack/deps/lib/baresip/modules   # <project>/deps/...
 module                  g711.so
 module                  alsa.so
-# echo canceller for the 2-wire line (see HARDWARE.md loop test); needs webrtc-audio-processing
+# echo canceller for the 2-wire line (see docs/HARDWARE.md loop test); needs webrtc-audio-processing
 #module                 webrtc_aec.so
 
 # --- UI: Rejack replaces menu.so ------------------------------------------------------

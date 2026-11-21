@@ -30,7 +30,7 @@
   rejack_line_alert  120               # s the line may be down before the hook gets "line-down" (0 = off)
  \endverbatim
  *
- * 911 policy (PROJECT.md): "allow" (default) always attempts 911. Every 911 runs the emergency hook
+ * 911 policy (ARCHITECTURE.md): "allow" (default) always attempts 911. Every 911 runs the emergency hook
  * ("dialed"). If 911 can't go through — no network, call fails, or policy "verified"/"block" refuses
  * it — the line stays open: announcement, local recording, hook ("failed"), and on hang-up ("ended").
  * "verified" attempts 911 only while the status file says `verified <did> <time>` for

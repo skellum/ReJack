@@ -15,7 +15,7 @@
 
 struct tjdev;
 
-/* Decoded 2-byte HID input report (see HARDWARE.md). */
+/* Decoded 2-byte HID input report (see docs/HARDWARE.md). */
 struct tj_input {
 	bool offhook;
 	char key;        /* '0'-'9', '*', '#', or 0 for none */

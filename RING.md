@@ -147,7 +147,7 @@ step** (LED solid, "No Line" throughout). Conclusion: **the TjIpSys type-2 activ
   pollable view of the HID report; 0x0C–0x0E are a "software HID report" that firmware/host can inject.
 
 ## Board photo (2026-11-16): no ProSLIC — discrete line circuit
-See HARDWARE.md "Board". Discrete boost converter (L4 100 µH, D1, C38, switch transistor), HV transistors
+See [`docs/HARDWARE.md`](docs/HARDWARE.md) "Board". Discrete boost converter (L4 100 µH, D1, C38, switch transistor), HV transistors
 (MMBT5401 ×2 visible, 5551-class NPN), PC814 AC-input opto for loop sense, no SLIC or boost-controller IC on the
 component side. The ProSLIC SPI hypothesis is closed. Next: back-side photo (Q1–Q3, U1/U3/U4), then trace which
 TigerJet pins reach the switch transistor bases and the opto output — before any GPIO output experiment.

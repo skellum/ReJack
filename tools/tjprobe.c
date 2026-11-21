@@ -37,7 +37,7 @@
  *   SLIC read:   write 0x26..0x29 = { addr|0x80, 0, 0, 0x67 }, then read reg 0x27
  *
  * Build:  gcc -O2 -Wall -o tjprobe tjprobe.c
- * Run:    sudo ./tjprobe [regs|slic]     (or install the udev rule from HARDWARE.md)
+ * Run:    sudo ./tjprobe [regs|slic]     (or install the udev rule from docs/HARDWARE.md)
  */
 #include <dirent.h>
 #include <errno.h>

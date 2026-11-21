@@ -157,7 +157,7 @@ bank `04 BB BB 00`, then GET). The analog line needs **no initialisation**:
 | Hook | `0x58` bit 1 | `0x03` off-hook, `0x01` on-hook; also HID report byte `0x09` bit 7 |
 | DTMF decoder | `0x15` | bit 6 = digit present, low nibble: 1–9, `A`=0, `B`=*, `C`=# |
 
-Full derivation (magicJack and GVJack drivers, test logs) in `RING.md`. Still unknown: ring voltage (Sandman's V1:
+Full derivation (magicJack and GVJack drivers, test logs) in [`RING.md`](../RING.md). Still unknown: ring voltage (Sandman's V1:
 ~85 V square wave), LED control.
 
 ---
