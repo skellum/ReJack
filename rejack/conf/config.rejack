@@ -41,3 +41,4 @@ rejack_emergency_hook      /usr/local/bin/rejack-emergency
 rejack_emergency_announce  /usr/local/share/rejack/emergency.wav
 rejack_record_dir          /var/lib/rejack/recordings
 rejack_record_dev          hw:TigerJet,0
+rejack_line_alert          120         # s the line may be down before "line-down" goes to the hook (0 = off)

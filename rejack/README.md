@@ -10,12 +10,13 @@ and the analog phone plugged into it into a SIP phone. Project docs: `../PROJECT
 | `src/phone.[ch]` | Call state machine (hook, digits, SIP progress → tones/ring/dial/answer) | no |
 | `src/tones.[ch]` | North American call-progress tones (dial, ringback, busy, reorder, howler) | no |
 | `src/tjdev.[ch]` | Dongle access over hidraw: hook/keypad decode, TigerJet register R/W, ring/line power | no |
+| `src/linemon.[ch]` | Line-down monitor: when to send the "line down" / "restored" alerts | no |
 | `src/rejack.c` | baresip glue: hidraw fd, timers, SIP events, tone playback, config | yes |
-| `test/test_phone.c` | Unit tests for the three core files | no |
+| `test/test_phone.c` | Unit tests for the core files | no |
 | `conf/config.rejack` | baresip config lines for Rejack | — |
 
 ## Status
-- State machine, tones, line-register decoding, E911 status check: implemented, 139 unit checks passing.
+- State machine, tones, line-register decoding, E911 status check, line-down monitor: implemented, 158 unit checks passing.
 - baresip glue: builds against baresip/libre **v4.12.0** in `../deps/`, loads in baresip (`run/` dev config).
 - Line control (`src/tjdev.c`, registers verified on hardware): hook `0x58` and DTMF `0x15` polled every 20 ms
   (hook debounced over 3 polls), ring `0x3D`, dial tone from the chip's generator (`0x34` bit 6;
@@ -64,6 +65,12 @@ Runs `rejack/run/start.sh` as the invoking user (needs the `audio` group). Resta
 `tools/tjprobe release` hands the line back to the chip. If the dongle is missing or unplugged, Rejack keeps
 running, ends any call, and re-attaches within ~2 s when it returns (baresip would otherwise run on silently
 without a module that failed to load).
+
+**Line-down alert:** if the dongle is missing, or keeps dropping off and re-enumerating, for
+`rejack_line_alert` seconds (default 120; 0 = off), Rejack runs the hook with `line-down - <detail> -`. Once
+the dongle has stayed attached for 30 s it sends `line-up` with the outage length (only after a down alert).
+`scripts/rejack-emergency` posts both on the configured channels (ntfy priority high / default).
+A dongle that stops enumerating (USB `error -71`/`-110`) needs a physical replug; the alert is how you find out.
 
 ## Run (installed)
 ```

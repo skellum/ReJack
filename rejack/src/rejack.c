@@ -27,6 +27,7 @@
   rejack_record_dev  hw:TigerJet,0     # capture device for the fallback recording
   rejack_dtmf        inband            # inband | send  (send = also signal digits to the far end)
   rejack_dialtone    hw                # hw (chip generator, default) | sw (baresip player)
+  rejack_line_alert  120               # s the line may be down before the hook gets "line-down" (0 = off)
  \endverbatim
  *
  * 911 policy (PROJECT.md): "allow" (default) always attempts 911. Every 911 runs the emergency hook
@@ -34,6 +35,8 @@
  * it — the line stays open: announcement, local recording, hook ("failed"), and on hang-up ("ended").
  * "verified" attempts 911 only while the status file says `verified <did> <time>` for
  * rejack_e911_did and is younger than rejack_e911_max_age.
+ * Line-down alert: if the dongle is missing or keeps dropping off for rejack_line_alert seconds, the
+ * emergency hook gets "line-down"; once it has stayed attached for 30 s, "line-up" (only after an alert).
  * Copyright (c) 2026 Skellum. SPDX-License-Identifier: MIT (see ../../LICENSE)
  */
 #include <signal.h>
@@ -47,6 +50,7 @@
 #include "e911.h"
 #include "phone.h"
 #include "tjdev.h"
+#include "linemon.h"
 #include "tones.h"
 
 extern char **environ;
@@ -86,6 +90,10 @@ struct rejack {
 	char e911_did[32];
 	char e911_status[256];
 	uint32_t e911_max_age_h;
+
+	struct linemon lm;           /* line-down alert */
+	uint32_t line_alert_s;
+	char     lost_why[64];       /* last reason the dongle was lost */
 };
 
 static struct rejack rj;
@@ -344,6 +352,45 @@ static void run_hook(const char *event, bool verified, const char *reason, const
 	(void)spawn(argv);
 }
 
+/* rejack_emergency_hook <line-down|line-up> - <detail> - */
+static void run_line_hook(const char *event, const char *detail)
+{
+	char *argv[] = { rj.emerg_hook, (char *)event, "-", (char *)detail, "-", NULL };
+
+	warning("rejack: %s: %s\n", event, detail);
+	if (rj.emerg_hook[0])
+		(void)spawn(argv);
+}
+
+#define LINE_STABLE_MS 30000     /* attached this long = line back */
+
+static uint64_t now_ms(void)
+{
+	return tmr_jiffies() + 1;    /* linemon treats 0 as "never" */
+}
+
+static void line_check(void)
+{
+	char detail[160];
+	uint64_t out;
+	unsigned min;
+
+	switch (linemon_check(&rj.lm, now_ms(), &out)) {
+	case LM_ALERT_DOWN:
+		snprintf(detail, sizeof(detail), "magicJack not working for %u min (%s)",
+			 (unsigned)(out / 60000), rj.lost_why[0] ? rj.lost_why : "not found");
+		run_line_hook("line-down", detail);
+		break;
+	case LM_ALERT_UP:
+		min = (unsigned)(out / 60000);
+		snprintf(detail, sizeof(detail), "magicJack back after %uh %02um", min / 60, min % 60);
+		run_line_hook("line-up", detail);
+		break;
+	default:
+		break;
+	}
+}
+
 static void start_recording(void)
 {
 	char ts[32];
@@ -450,6 +497,8 @@ static void dev_attach(void *arg);
 static void dev_lost(const char *why)
 {
 	warning("rejack: magicJack lost (%s) — retrying every %d s\n", why, ATTACH_RETRY_MS / 1000);
+	snprintf(rj.lost_why, sizeof(rj.lost_why), "%s", why);
+	linemon_lost(&rj.lm, now_ms());
 	rj.fhs = fd_close(rj.fhs);
 	tjdev_close(rj.dev);
 	rj.dev = NULL;
@@ -489,11 +538,13 @@ static void dev_attach(void *arg)
 		if (!rj.attach_warned)
 			warning("rejack: magicJack not found (%m) — waiting for it\n", -err);
 		rj.attach_warned = true;
+		line_check();
 		tmr_start(&rj.tmr_poll, ATTACH_RETRY_MS, dev_attach, NULL);
 		return;
 	}
 	rj.attach_warned = false;
 	info("rejack: using %s\n", tjdev_path(rj.dev));
+	linemon_attached(&rj.lm, now_ms());
 
 	err = tjdev_setup(rj.dev);       /* we own dial tone and ring from here on */
 	if (err)
@@ -521,6 +572,7 @@ static void poll_tick(void *arg)
 		return;
 	}
 	rj.poll_fails = 0;
+	line_check();
 	if (ln.hook_changed)
 		feed(ln.offhook ? EV_OFFHOOK : EV_ONHOOK, 0);
 	if (ln.digit) {
@@ -661,6 +713,8 @@ static void load_config(struct ph_config *pc)
 
 	v[0] = '\0';
 	rj.hw_dialtone = !(!conf_get_str(conf, "rejack_dialtone", v, sizeof(v)) && !strcmp(v, "sw"));
+	rj.line_alert_s = 120;
+	(void)conf_get_u32(conf, "rejack_line_alert", &rj.line_alert_s);
 	v[0] = '\0';
 	rj.send_dtmf = !conf_get_str(conf, "rejack_dtmf", v, sizeof(v)) && !strcmp(v, "send");
 
@@ -685,6 +739,7 @@ static int module_init(void)
 	tmr_init(&rj.tmr_poll);
 	load_config(&pc);
 	phone_init(&rj.ph, &pc, &ops, NULL);
+	linemon_init(&rj.lm, now_ms(), (uint64_t)rj.line_alert_s * 1000, LINE_STABLE_MS);
 
 	tmr_init(&tmr_reap);
 	(void)op_e911_ok(NULL);                   /* log current E911 status at startup */

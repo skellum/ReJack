@@ -31,3 +31,4 @@ rejack_emergency_hook      @ROOT@/rejack/scripts/rejack-emergency
 rejack_emergency_announce  @ROOT@/rejack/sounds/emergency.wav
 rejack_record_dir          @ROOT@/rejack/run/recordings
 rejack_record_dev          hw:TigerJet,0
+rejack_line_alert          120         # s before "line-down" goes to the hook (0 = off)

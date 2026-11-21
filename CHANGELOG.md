@@ -8,6 +8,13 @@ Newest first. Commit hashes refer to this repository.
 
 ## [Unreleased]: in progress
 
+**Line-down alert** (2026-11-20)
+- ✅ Rejack tells the emergency contacts when the phone line is down: dongle missing, or dropping off and
+  re-enumerating, for 2 minutes (`rejack_line_alert`) → `line-down`; back and stable for 30 s → `line-up` with
+  the outage length. New `src/linemon.c` (pure logic, 19 new unit checks; 158 total).
+- Why: on 2026-11-19 the dongle was reset 449 times in 15 hours while a failing USB drive shared its USB 2.0
+  controller, then stopped enumerating. Rejack retried for about 32 hours and nobody knew.
+
 **Integrations spec and household plan** (2026-11-18, docs only)
 - 💡 `INTEGRATIONS.md`: Switchboard (Node/TS, Asterisk ARI + externalMedia), Discord voice bridge, OpenClaw phone
   agent (OpenAI-compatible API + local STT/TTS; its voice-call plugin has no SIP support).

@@ -3,6 +3,7 @@
 #
 # Called by rejack.so (rejack_emergency_hook):
 #     rejack-emergency <dialed|failed|ended> <verified|unverified> <reason|-> <recording.wav|->
+#     rejack-emergency <line-down|line-up> - <detail> -     # dongle stopped working / is back
 # Also:
 #     rejack-emergency flush      # resend anything queued while offline (run from a timer)
 #     rejack-emergency test       # send a test message on every configured channel
@@ -33,7 +34,7 @@ send_ntfy() {   # text only
 	[ -n "${NTFY_URL:-}" ] || return 0
 	local t
 	t=$(printf '%s' "$1" | LC_ALL=C tr -cd '\40-\176' | sed 's/^ *//')   # headers must be ASCII
-	curl -fsS -m 20 -H "Title: $t" -H "Priority: urgent" -H "Tags: rotating_light" \
+	curl -fsS -m 20 -H "Title: $t" -H "Priority: ${NTFY_PRIORITY:-urgent}" -H "Tags: ${NTFY_TAGS:-rotating_light}" \
 		-d "$2" "$NTFY_URL" >/dev/null
 }
 
@@ -103,8 +104,8 @@ flush() {
 case "${1:-}" in
 flush) flush; exit 0 ;;
 test)  send_all "TEST: $NAME" "Rejack emergency notification test." ""; exit $? ;;
-dialed|failed|ended) ;;
-*) echo "usage: $0 dialed|failed|ended verified|unverified reason recording | flush | test" >&2; exit 2 ;;
+dialed|failed|ended|line-down|line-up) ;;
+*) echo "usage: $0 dialed|failed|ended verified|unverified reason recording | line-down|line-up - detail - | flush | test" >&2; exit 2 ;;
 esac
 
 event=$1 e911=${2:-unverified} reason=${3:--} rec=${4:--}
@@ -131,5 +132,13 @@ ended)
 	[ -n "$rec" ] && body="$body Fallback recording attached ($rec)."
 	sleep 1   # let arecord finish writing the WAV header
 	send_all "$title" "$body" "$rec" ;;
+line-down)
+	title="☎ Phone line DOWN — $NAME"
+	body="$reason, as of $when. Calls to and from this phone, including 911, will not work. Replug the magicJack (USB 2.0 port) or use a mobile phone."
+	NTFY_PRIORITY=high NTFY_TAGS=warning send_all "$title" "$body" "" ;;
+line-up)
+	title="☎ Phone line restored — $NAME"
+	body="$reason ($when)."
+	NTFY_PRIORITY=default NTFY_TAGS=white_check_mark send_all "$title" "$body" "" ;;
 esac
 log "$event e911=$e911 reason='$reason' rec='$rec'"

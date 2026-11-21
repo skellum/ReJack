@@ -6,7 +6,7 @@ add_compile_definitions(_DEFAULT_SOURCE)
 add_compile_options(-Wall -Wextra)
 
 # --- Core logic: no baresip dependency, always built and tested ------------------
-add_library(rejack_core STATIC src/phone.c src/tones.c src/tjdev.c src/e911.c)
+add_library(rejack_core STATIC src/phone.c src/tones.c src/tjdev.c src/e911.c src/linemon.c)
 set_target_properties(rejack_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(rejack_core PUBLIC m)
 

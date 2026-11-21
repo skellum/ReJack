@@ -9,6 +9,7 @@
 #include <time.h>
 #include <unistd.h>
 #include "../src/e911.h"
+#include "../src/linemon.h"
 #include "../src/phone.h"
 #include "../src/tjdev.h"
 #include "../src/tones.h"
@@ -504,6 +505,60 @@ static void test_e911_status_file(void)
 	CHECK(!e911_verified(path, "+15551234567", day, now, why, sizeof(why)));  /* missing */
 }
 
+static void test_linemon(void)
+{
+	struct linemon m;
+	uint64_t out = 0;
+
+	/* start-up: dongle attaches and stays -> no alert either way */
+	linemon_init(&m, 1000, 120000, 30000);
+	linemon_attached(&m, 1500);
+	CHECK(linemon_check(&m, 2000, NULL) == LM_NONE);
+	CHECK(linemon_check(&m, 31500, NULL) == LM_NONE);      /* stable: line up, silently */
+	CHECK(m.down_since == 0);
+
+	/* short unplug (moved to another port): back within the delay -> nothing sent */
+	linemon_lost(&m, 100000);
+	CHECK(linemon_check(&m, 150000, NULL) == LM_NONE);
+	linemon_attached(&m, 160000);
+	CHECK(linemon_check(&m, 190000, NULL) == LM_NONE);
+	CHECK(m.down_since == 0 && !m.alerted);
+
+	/* real outage: one alert after 2 min, not repeated */
+	linemon_lost(&m, 200000);
+	CHECK(linemon_check(&m, 319999, &out) == LM_NONE);
+	CHECK(linemon_check(&m, 320000, &out) == LM_ALERT_DOWN);
+	CHECK(out == 120000);
+	CHECK(linemon_check(&m, 900000, NULL) == LM_NONE);
+
+	/* flapping (attach, lose, attach...) keeps the outage open and its start time */
+	linemon_attached(&m, 1000000);
+	CHECK(linemon_check(&m, 1010000, NULL) == LM_NONE);
+	linemon_lost(&m, 1015000);
+	CHECK(m.down_since == 200000);
+	linemon_attached(&m, 1100000);
+	CHECK(linemon_check(&m, 1129999, NULL) == LM_NONE);
+	/* stable for 30 s -> one "restored", outage measured to the final attach */
+	CHECK(linemon_check(&m, 1130000, &out) == LM_ALERT_UP);
+	CHECK(out == 1100000 - 200000);
+	CHECK(linemon_check(&m, 1200000, NULL) == LM_NONE);
+
+	/* flapping that never settles still alerts */
+	linemon_lost(&m, 2000000);
+	linemon_attached(&m, 2001000);
+	linemon_lost(&m, 2010000);
+	linemon_attached(&m, 2100000);
+	CHECK(linemon_check(&m, 2120000, NULL) == LM_ALERT_DOWN);
+
+	/* missing at start-up counts as an outage */
+	linemon_init(&m, 5000, 120000, 30000);
+	CHECK(linemon_check(&m, 125000, NULL) == LM_ALERT_DOWN);
+
+	/* down_ms = 0 disables alerts */
+	linemon_init(&m, 5000, 0, 30000);
+	CHECK(linemon_check(&m, 99999999, NULL) == LM_NONE);
+}
+
 int main(void)
 {
 	test_outgoing_call();
@@ -525,6 +580,7 @@ int main(void)
 	test_hid_decode();
 	test_line_decode();
 	test_e911_status_file();
+	test_linemon();
 
 	printf("%d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;
