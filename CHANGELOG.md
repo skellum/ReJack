@@ -15,12 +15,12 @@ Newest first. Commit hashes refer to this repository.
 - Why: on 2026-11-19 the dongle was reset 449 times in 15 hours while a failing USB drive shared its USB 2.0
   controller, then stopped enumerating. Rejack retried for about 32 hours and nobody knew.
 
-**Integrations spec and household plan** (2026-11-18, docs only)
+**Integrations spec and multi-line plan** (2026-11-18, docs only)
 - 💡 `INTEGRATIONS.md`: Switchboard (Node/TS, Asterisk ARI + externalMedia), Discord voice bridge, OpenClaw phone
-  agent (OpenAI-compatible API + local STT/TTS; its voice-call plugin has no SIP support).
-- 💡 Household phones in `PROJECT.md`: CM18445 4-line system on 4 dongles; ring group 129 / conference 128 for two rooms.
+  agent (the Gateway's chat-completions HTTP API + local STT/TTS; its voice-call plugin has no SIP support).
+- 💡 One line per room (`ARCHITECTURE.md`): a 4-line DECT system on 4 dongles; ring group and conference for two extensions.
 
-**Voicemail on Asterisk** (`33c866d`, WIP, not yet installed or tested)
+**Voicemail on Asterisk** (`33c866d`; installed 2026-11-18, being tested)
 - 💡 Ring 25 s. On no answer or no registration the caller gets the "unavailable" greeting; on busy, the "busy"
   greeting.
 - 💡 `*97` opens your own mailbox without a PIN. `*98` opens any mailbox with a PIN.
@@ -30,8 +30,8 @@ Newest first. Commit hashes refer to this repository.
 - 🔄 Plan change: voicemail was "provider first, post-MVP". It now lives in the home Asterisk, so it works before
   there's a trunk.
 - ✅ Added `CHANGELOG.md`.
-- ⏳ Run `sudo pbx/install.sh`, then test unavailable, no-answer, `*97` and MWI.
-- ⏳ Update the docs and make a final commit.
+- ✅ Installed with `sudo pbx/install.sh`.
+- ⏳ Test unavailable, no-answer, `*97` and MWI, then update the docs.
 
 ---
 
@@ -126,17 +126,17 @@ Newest first. Commit hashes refer to this repository.
 | 4 | ⏳ Provider E911 checker script | After the provider is chosen |
 | 4 | ⏳ ALSA dsnoop so the emergency recording and call audio can share capture | Before bridging a contact into a 911 call |
 | 4 | ⏳ Echo canceller | None heard so far; revisit with a real trunk |
-| 5 | ⏳ Voicemail: install, test, commit | **Current** |
+| 5 | ⏳ Voicemail: test | **Current** |
 | 5 | ⏳ Exercise the 911 fallback against the test congestion | Sends real alerts if configured; plan it first |
-| 5 | ⏳ VoIP.ms trunk (real number, inbound/outbound, E911) | VoIP.ms is the leading candidate; confirm pricing at signup |
+| 5 | ⏳ SIP trunk provider (real number, inbound/outbound, E911) | Confirm pricing at signup |
 | 5+ | 💡 Voicemail notifications (ntfy/Telegram via externnotify) | Proposed |
 | 5+ | 💡 MWI stutter dial tone on the analog phone | Proposed |
 | post-MVP | 💡 Caller ID (Bell 202 FSK between rings, also sets the phone's clock) | Proposed |
 | post-MVP | 💡 Hook flash (call waiting, transfer) | Proposed |
 | 6 | ⏳ Packaging (udev + systemd + config as an installable unit) | Pieces exist; not packaged yet |
-| 6 | 💡 Household phones: VTech CM18445 + 4 dongles, one line/extension each (office and three rooms) | Line-1 compatibility test first; see `PROJECT.md` |
+| 6 | 💡 One line per room: VTech CM18445 + 4 dongles, one extension each | Compatibility test on one line first; see `ARCHITECTURE.md` |
 | 6 | 💡 Multi-dongle Rejack (`rejack@.service`, per-port device names) | Needed for household phones |
 | 7 | 💡 Switchboard: Discord voice bridge (ext 700), OpenClaw agent calls / dial-the-agent (ext 800) | Spec in `INTEGRATIONS.md` |
 | 7 | 💡 Switchboard: Home Assistant/MQTT, doorbell, Telegram alerts | Proposed |
 
-**Still open:** the VoIP.ms choice and its pricing; whether the CM18445 accepts the A921's 34 V line.
+**Still open:** the SIP trunk provider and its pricing; whether the CM18445 accepts the A921's 34 V line.

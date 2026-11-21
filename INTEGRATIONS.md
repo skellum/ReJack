@@ -1,6 +1,6 @@
 # Integrations spec: Switchboard, Discord, OpenClaw
 
-Status: **spec, not started** (written 2026-11-18). This is Phase 7 in `PROJECT.md`.
+Status: **spec, not started** (written 2026-11-18). Phase 7 on the roadmap in [`CHANGELOG.md`](CHANGELOG.md).
 
 Switchboard is the integration layer, nicknamed *Ansible*. It is a separate service from Rejack. Rejack stays a
 plain SIP extension and never changes for an integration. Every integration talks to **Asterisk**, never to
@@ -126,10 +126,10 @@ OpenClaw is **not set up yet**. These facts come from its docs (2026-11-18); re-
 ### What OpenClaw offers, and what that means here
 | OpenClaw feature | Use here |
 |---|---|
-| `POST /v1/chat/completions` on the Gateway (OpenAI-compatible, **off by default**: `gateway.http.endpoints.chatCompletions.enabled`) | **Main path.** A synchronous agent turn: text in, text out. Bearer token, `x-openclaw-agent-id` header |
+| `POST /v1/chat/completions` on the Gateway (the common chat-completions HTTP shape, **off by default**: `gateway.http.endpoints.chatCompletions.enabled`) | **Main path.** A synchronous agent turn: text in, text out. Bearer token, `x-openclaw-agent-id` header |
 | `POST /hooks/agent` / `/hooks/wake` (off by default; `hooks.enabled`, dedicated `hooks.token`) | Asynchronous: hand the agent an event, e.g. "the reminder call was confirmed with 1" |
 | Skills (`SKILL.md`) | An OpenClaw skill calls Switchboard's `POST /api/call` so the agent can phone the house |
-| Voice-call plugin (`@openclaw/voice-call`) | **Not used.** Only supports Twilio, Telnyx and Plivo (plus a mock provider), not SIP. Emulating Twilio's API to feed it audio would be fragile |
+| Voice-call plugin (`@openclaw/voice-call`) | **Not used.** It talks only to three commercial cloud-telephony APIs (plus a mock provider), not SIP. Emulating one of those APIs to feed it audio would be fragile |
 
 The doc warns that the Gateway token is **full operator access**. It lives only in Switchboard's env file. Both
 the Gateway and Switchboard listen on the LAN only, never the internet.
@@ -188,7 +188,7 @@ exten => 800,1,Answer()
 ```
 
 Extensions are only reachable from the internal `rejack-phones` context, never from a trunk. They are still
-subject to the per-extension rules in `PROJECT.md` (Household phones).
+subject to the per-extension rules in [`ARCHITECTURE.md`](ARCHITECTURE.md#planned-one-line-per-room).
 
 ---
 
@@ -199,10 +199,21 @@ subject to the per-extension rules in `PROJECT.md` (Household phones).
 4. **Dial the agent** (§3b): adds STT, streaming and barge-in.
 5. `/ring-house`, if wanted.
 
+## 6. Other integration ideas (not specced)
+
+| Integration | Feasibility | Approach |
+|---|---|---|
+| Android / iPhone / Windows | Easy | Standard SIP softphone apps registered to Asterisk (Linphone is in use) |
+| Doorbell | Doable, unofficial | A Home Assistant community integration → ring the phone. Can break when the vendor's cloud changes |
+| Smart speakers | Partial | No third-party calling; announcements and routines via Home Assistant |
+| Telegram | Notifications only | Bots can't place voice calls; missed-call and voicemail alerts |
+| Teams | Hard, costly | Needs Teams Phone licensing and a certified SBC |
+| WhatsApp | Not practical | No calling API for personal accounts |
+
 ## Sources
 - Discord DAVE enforcement: https://discord.com/blog/every-voice-and-video-call-on-discord-is-now-end-to-end-encrypted,
   https://docs.discord.com/developers/topics/voice-connections
 - `@discordjs/voice` (DAVE via `@snazzah/davey`; receive is undocumented): https://discord.js.org/docs/packages/voice/stable
 - OpenClaw webhooks: https://docs.openclaw.ai/automation/cron-jobs/webhooks, https://docs.openclaw.ai/gateway/config-hooks
-- OpenClaw OpenAI-compatible API: https://docs.openclaw.ai/gateway/openai-http-api
+- OpenClaw chat-completions HTTP API: https://docs.openclaw.ai/gateway/openai-http-api
 - OpenClaw voice-call plugin: https://docs.openclaw.ai/plugins/voice-call

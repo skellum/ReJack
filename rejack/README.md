@@ -1,8 +1,8 @@
 # Rejack
 
 A [baresip](https://github.com/baresip/baresip) application module that turns a magicJack A921 USB dongle
-and the analog phone plugged into it into a SIP phone. Project docs: `../PROJECT.md`, `../HARDWARE.md`,
-`../RING.md`.
+and the analog phone plugged into it into a SIP phone. Project docs: [`../ARCHITECTURE.md`](../ARCHITECTURE.md),
+[`../docs/HARDWARE.md`](../docs/HARDWARE.md), [`../RING.md`](../RING.md).
 
 ## Layout
 | File | Role | baresip needed? |
@@ -32,8 +32,10 @@ Ubuntu 24.04 ships baresip 1.0.0 (2020), whose module API is incompatible. Build
 ```
 sudo apt install cmake libssl-dev zlib1g-dev
 ```
-Then (sources are already cloned in `../ext/re` and `../ext/baresip` at tag v4.12.0):
+Then clone the sources at tag v4.12.0 into `../ext/` (gitignored) and build them:
 ```
+git clone --depth 1 --branch v4.12.0 https://github.com/baresip/re ../ext/re
+git clone --depth 1 --branch v4.12.0 https://github.com/baresip/baresip ../ext/baresip
 PREFIX=$(cd .. && pwd)/deps      # run from rejack/
 cmake -S ../ext/re -B ../ext/re/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$PREFIX
 cmake --build ../ext/re/build -j && cmake --install ../ext/re/build
@@ -47,6 +49,15 @@ cmake --build ../ext/baresip/build -j && cmake --install ../ext/baresip/build
 PKG_CONFIG_PATH=$PREFIX/lib/pkgconfig cmake -S . -B build
 cmake --build build && ctest --test-dir build
 cmake --install build          # rejack.so -> $PREFIX/lib/baresip/modules
+```
+Stop `rejack.service` before `cmake --install` if it is running (it has the old `rejack.so` loaded).
+
+The unit tests also pass under AddressSanitizer and UndefinedBehaviorSanitizer:
+```
+cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug \
+      -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all" \
+      -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+cmake --build build-asan --target test_phone && build-asan/test_phone
 ```
 
 ## Run (development)
@@ -78,7 +89,7 @@ LD_LIBRARY_PATH=$PREFIX/lib $PREFIX/bin/baresip     # first run writes ~/.baresi
 ```
 Merge `conf/config.rejack` into `~/.baresip/config` (and comment out `module_app menu.so`), add a SIP
 account to `~/.baresip/accounts`, and restart. The hidraw node needs access: run as root for now, or
-install the udev rule from `../HARDWARE.md`.
+install the udev rule from [`../docs/HARDWARE.md`](../docs/HARDWARE.md).
 
 ## 911 — always attempted, never a dead end
 - `rejack_911 allow` (default): 911/1911/9911 are always dialed. `verified` dials only with a fresh E911

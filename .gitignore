@@ -2,6 +2,7 @@
 ext/
 deps/
 rejack/build/
+rejack/build-asan/
 *.o
 *.so
 
