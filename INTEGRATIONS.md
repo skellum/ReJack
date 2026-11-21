@@ -45,7 +45,7 @@ Asterisk call ── externalMedia RTP (slin16, 20 ms frames) ──► AudioPor
 - DTMF events, which arrive through ARI as `ChannelDtmfReceived`.
 
 ### Local HTTP API (for OpenClaw and scripts)
-Listens on the LAN with a bearer token (`SWITCHBOARD_TOKEN`). OpenClaw runs on another host.
+Listens on localhost with a bearer token (`SWITCHBOARD_TOKEN`). The agent runtimes run on the same machine.
 
 | Method | Path | Does |
 |---|---|---|
@@ -121,7 +121,10 @@ QUIET_HOURS=21:00-08:00
 
 ## 3. OpenClaw connector: talk to the agent by phone
 
-OpenClaw is **not set up yet**. These facts come from its docs (2026-11-18); re-check them when it is installed.
+**Not built yet.** Two agent runtimes are already installed on the PBX box: **OpenClaw** (Gateway on
+`127.0.0.1:18789`) and **Hermes Agent**. The connector is written against OpenClaw first; the speech loop only
+needs a chat-style HTTP turn, so Hermes can sit behind extension 800 instead if it offers one (to check). The
+OpenClaw facts below come from its docs (2026-11-18); re-check them against the installed version.
 
 ### What OpenClaw offers, and what that means here
 | OpenClaw feature | Use here |
@@ -131,8 +134,8 @@ OpenClaw is **not set up yet**. These facts come from its docs (2026-11-18); re-
 | Skills (`SKILL.md`) | An OpenClaw skill calls Switchboard's `POST /api/call` so the agent can phone the house |
 | Voice-call plugin (`@openclaw/voice-call`) | **Not used.** It talks only to three commercial cloud-telephony APIs (plus a mock provider), not SIP. Emulating one of those APIs to feed it audio would be fragile |
 
-The doc warns that the Gateway token is **full operator access**. It lives only in Switchboard's env file. Both
-the Gateway and Switchboard listen on the LAN only, never the internet.
+The doc warns that the Gateway token is **full operator access**. It lives only in Switchboard's env file. The
+Gateway and Switchboard both listen on localhost only, never the LAN or the internet.
 
 ### 3a. Agent calls you (`reply: none | dtmf`)
 1. OpenClaw (through the skill) sends `POST /api/call {to:"100", message:"Trash goes out tonight", reply:"dtmf"}`.
@@ -160,11 +163,11 @@ Run them locally: household audio shouldn't go to a cloud by default.
 - **TTS**: Piper (fast, offline, many voices).
 - ⚠ **The PBX box CPU is an i7-960, which has no AVX.** Many prebuilt ML wheels and ONNX runtimes require AVX.
   Verify before building on it. Fallbacks: GPU-only builds, building from source without AVX, or running the speech
-  services on the OpenClaw host and calling them over the LAN.
+  services on another machine and calling them over the LAN.
 
 ### Config (`switchboard.env`)
 ```
-OPENCLAW_URL=http://ServerName:18789
+OPENCLAW_URL=http://127.0.0.1:18789
 OPENCLAW_TOKEN=…                    # Gateway token (chat completions)
 OPENCLAW_HOOKS_TOKEN=…              # hooks token (results back to the agent)
 OPENCLAW_AGENT_ID=main
