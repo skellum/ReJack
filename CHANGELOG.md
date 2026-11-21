@@ -20,7 +20,7 @@ Newest first. Commit hashes refer to this repository.
   agent (the Gateway's chat-completions HTTP API + local STT/TTS; its voice-call plugin has no SIP support).
 - 💡 One line per room (`ARCHITECTURE.md`): a 4-line DECT system on 4 dongles; ring group and conference for two extensions.
 
-**Voicemail on Asterisk** (`33c866d`; installed 2026-11-18, being tested)
+**Voicemail on Asterisk** (`8c1bd60`; installed 2026-11-18, being tested)
 - 💡 Ring 25 s. On no answer or no registration the caller gets the "unavailable" greeting; on busy, the "busy"
   greeting.
 - 💡 `*97` opens your own mailbox without a PIN. `*98` opens any mailbox with a PIN.
@@ -35,7 +35,7 @@ Newest first. Commit hashes refer to this repository.
 
 ---
 
-## 2026-11-17: Service and hot-plug (`57b2d0e`)
+## 2026-11-17: Service and hot-plug (`8f9f57a`)
 - ✅ systemd `rejack.service`:
   - Starts at boot, restarts on crash, and runs as a normal user in the `audio` group with a hardened sandbox.
   - `ExecStopPost` runs `tjprobe release`, which hands dial tone back to the chip.
@@ -43,7 +43,7 @@ Newest first. Commit hashes refer to this repository.
   - Unplugging mid-call drops the call cleanly. Replugging brings dial tone back with no restart.
 - ✅ Verified: a call through the service, unplug and replug, and stop giving the chip's dial tone.
 
-## 2026-11-17: Architecture doc (`671e266`)
+## 2026-11-17: Architecture doc (`a16fc99`)
 - ✅ `ARCHITECTURE.md`:
   - What runs where.
   - Who owns which function (copper pair = Rejack, routing = Asterisk).
@@ -54,7 +54,7 @@ Newest first. Commit hashes refer to this repository.
   - Placement options.
   - Why not drop Rejack.
 
-## 2026-11-17: First calls (`e41746d`)
+## 2026-11-17: First calls (`1cf3939`)
 - ✅ Asterisk 20 home PBX from `pbx/`:
   - Ext 100 = Rejack, 101 = Linphone cell, 102 = Linphone desktop.
   - Test extensions: 600 echo test, 601 hello-world, and 911/1911/9911 → test congestion.
@@ -69,7 +69,7 @@ Newest first. Commit hashes refer to this repository.
 - 🔄 Linphone setup: a third-party SIP account is added next to any existing linphone.org account. After a
   password change, delete and re-add the account (Linphone caches the old hash).
 
-## 2026-11-17: The line works (`771c659`)
+## 2026-11-17: The line works (`ba3f997`)
 - ✅ Buttset tests (TS52 PRO):
   - Talk battery is on from power-up: 34 V on-hook, 14 mA loop, no init needed.
   - Dial tone works and stops on the first digit.
@@ -84,19 +84,19 @@ Newest first. Commit hashes refer to this repository.
 - ✅ Resolved: a cordless set's "No Line" message came from the cordless set, not the dongle.
 - ✅ Open question answered: the chip decodes DTMF itself, so Rejack doesn't need software DTMF detection.
 
-## 2026-11-17: GVJack RE (`343d2e3`)
+## 2026-11-17: GVJack RE (`bc7481c`)
 - ✅ Reverse engineered GVJackApp v2 (Windows, 2013). This gave a second, independent source for the init, ring and
   hook registers, and for chip DTMF.
 - ❌ A downloaded GVJack package turned out to be a downloader stub with no payload.
 
-## 2026-11-16: Hardware research (`5519672` → `dc8a0cf`)
+## 2026-11-16: Hardware research (`463ac96` → `a7687e9`)
 - ✅ Board teardown, and RE of the magicJack macOS driver (TJ580 init, ring, hook).
 - ✅ `tjprobe` gained the gpio, activate and restore modes.
 - ❌ ProSLIC-over-SPI hypothesis: no SLIC answers on the serial port.
 - ❌ magicjack-liberation repo: not applicable to this hardware.
 - ❌ mj_dev: no software line-enable for the TJ580. In the end none was needed.
 
-## 2026-11-16: Project start (`cc9ba05` → `f066960`)
+## 2026-11-16: Project start (`971cc32` → `e3abf3b`)
 - ✅ Hardware enumeration with standard Linux drivers:
   - ALSA `TigerJet` (8 kHz).
   - The HID feature report gives register access.
