@@ -83,6 +83,18 @@ the dongle has stayed attached for 30 s it sends `line-up` with the outage lengt
 `scripts/rejack-emergency` posts both on the configured channels (ntfy priority high / default).
 A dongle that stops enumerating (USB `error -71`/`-110`) needs a physical replug; the alert is how you find out.
 
+## Watch it
+`tools/rejack` (Python 3, standard library only) shows what the line is doing. It is read-only: it reads the
+service journal, sysfs and systemctl, and never opens the dongle (a second reader of the chip's registers
+scrambles ReJack's own reads).
+```
+tools/rejack                 # one-shot status: service, dongle, SIP, line state, today's calls and errors
+tools/rejack -v              # follow every log line; calls, state changes and errors highlighted, repeats folded
+tools/rejack --visual        # top-style dashboard (-V); keys: q quit, v all lines/events, p pause, c clear errors
+tools/rejack --since "2026-11-20 08:00"      # widen the window (default: today)
+```
+Needs read access to the journal (`adm` or `systemd-journal` group).
+
 ## Run (installed)
 ```
 LD_LIBRARY_PATH=$PREFIX/lib $PREFIX/bin/baresip     # first run writes ~/.baresip/config

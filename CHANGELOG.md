@@ -8,7 +8,12 @@ Newest first. Commit hashes refer to this repository.
 
 ## [Unreleased]: in progress
 
-**Line-down alert** (2026-11-20)
+**Line monitor** (2026-11-21)
+- ✅ `tools/rejack`: one-shot status, `-v` live log (calls, state changes and errors highlighted, repeats
+  folded) and `--visual`, a top-style dashboard: service, dongle (USB port, speed, hidraw, ALSA card), SIP
+  registration, line state, current call, today's calls in/out and errors. Read-only: journal, sysfs, systemctl.
+
+**Line-down alert** (2026-11-20; deployed 2026-11-21)
 - ✅ Rejack tells the emergency contacts when the phone line is down: dongle missing, or dropping off and
   re-enumerating, for 2 minutes (`rejack_line_alert`) → `line-down`; back and stable for 30 s → `line-up` with
   the outage length. New `src/linemon.c` (pure logic, 19 new unit checks; 158 total).

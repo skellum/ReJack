@@ -79,7 +79,7 @@ list.
 | Line card functions (talk battery, ring, hook, DTMF, dial tone) | ✅ Verified on hardware |
 | Calls through Asterisk | ✅ Both directions, clean audio |
 | Service resilience (boot start, crash restart, hot-plug, chip restore) | ✅ Working |
-| Line-down alert to the emergency contacts | ✅ Unit tested · ⏳ deploy and test with a real unplug |
+| Line-down alert to the emergency contacts | ✅ Unit tested, deployed · ⏳ test with a real unplug |
 | 911 fallback (announcement, recording, alerts) | ✅ Unit tested · ⏳ end-to-end run next |
 | Voicemail on Asterisk, message waiting in softphones | ⏳ Configured, being tested |
 | Real phone number through a SIP trunk provider, with E911 | ⏳ Next |
@@ -110,7 +110,7 @@ the full map: who owns what, a call end to end, and a BORSCHT breakdown.
 | [`captures/`](captures/) | Raw diagnostic output (`lsusb -v`, sysfs, ALSA listings) the docs refer to |
 | [`rejack/`](rejack/) | The baresip module, unit tests, config, emergency notifier. Build and run: [`rejack/README.md`](rejack/README.md) |
 | [`pbx/`](pbx/) | Asterisk configuration and installer |
-| [`tools/`](tools/) | `tjprobe` (register probe), `aloop` (audio test), `fat16x.py` (FAT16 extractor) |
+| [`tools/`](tools/) | `rejack` (status, live log, top-style dashboard), `tjprobe` (register probe), `aloop` (audio test), `fat16x.py` (FAT16 extractor) |
 
 ## Prior work and thanks
 

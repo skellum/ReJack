@@ -1,0 +1,535 @@
+#!/usr/bin/env python3
+"""rejack — watch what the ReJack phone line is doing.
+
+    rejack                  one-shot status: service, dongle, SIP, line, today's calls and errors
+    rejack -v               follow every log line, with calls, state changes and errors highlighted
+    rejack --visual  (-V)   top-style live dashboard   keys: q quit  v all lines/events  p pause  c clear errors
+    options: --since "2026-11-20 08:00" (default: today)   --unit rejack.service
+
+Read-only. It reads the service journal (journalctl), sysfs and systemctl, and never opens the dongle:
+a second reader of the chip's registers scrambles ReJack's own reads.
+
+Copyright (c) 2026 Skellum. SPDX-License-Identifier: MIT (see ../LICENSE)
+"""
+import argparse
+import collections
+import datetime as dt
+import glob
+import json
+import os
+import queue
+import re
+import subprocess
+import sys
+import threading
+import time
+
+VID, PID = "06e6", "c200"
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
+WARN_ANSI = re.compile(r"\x1b\[(3[13]|1;3[13])m")     # baresip colours warnings/errors red/yellow
+TRANS = re.compile(r"^rejack: (\w+) --(\w+)--> (\w+)$")
+SIPNUM = re.compile(r"sip:([^@;>\s]+)")
+REGLINE = re.compile(r"^(\S+@\S+): \(prio \d+\) \{[^}]*\} (\d{3}) (.*)$")
+ERRWORDS = re.compile(r"\b(fail(ed|ing)?|error|lost|not found|cannot|refused|timeout|denied|Forbidden|"
+                      r"Unavailable|Busy Here|Not Found|terminated by signal)\b", re.I)
+OFFHOOK_STATES = {"DIALTONE", "DIALING", "CALLING", "CONNECTED", "DISCONNECTED", "EMERGENCY", "HOWLER",
+                  "BUSY", "REORDER"}
+
+
+def fmt_dur(s):
+    s = int(max(0, s))
+    if s >= 86400:
+        return f"{s // 86400}d {s % 86400 // 3600}h"
+    if s >= 3600:
+        return f"{s // 3600}h {s % 3600 // 60:02d}m"
+    return f"{s // 60:02d}:{s % 60:02d}"
+
+
+class Call:
+    def __init__(self, direction, peer, ts):
+        self.dir, self.peer, self.start = direction, peer, ts
+        self.answered = None
+        self.end = None
+        self.result = ""
+
+    def duration(self, now):
+        if not self.answered:
+            return 0
+        return (self.end or now) - self.answered
+
+
+class Model:
+    """Everything the views show, built from the log lines in order."""
+
+    def __init__(self):
+        self.state = "?"
+        self.state_ts = None
+        self.offhook = None
+        self.digits = ""
+        self.call = None
+        self.calls = collections.deque(maxlen=200)
+        self.errors = collections.deque(maxlen=200)     # [first_ts, last_ts, count, text]
+        self.events = collections.deque(maxlen=500)     # (ts, kind, text) for the event pane
+        self.reg = None                                 # (ok, text, ts)
+        self.dev = None                                 # (ok, text, ts)
+        self.alert = None                               # (kind, text, ts)
+        self.started = None
+        self.drops = 0
+        self.lines = 0
+
+    # -- helpers --
+    def _event(self, ts, kind, text):
+        self.events.append((ts, kind, text))
+
+    def _error(self, ts, text):
+        key = re.sub(r"\d+", "#", text)
+        if self.errors and re.sub(r"\d+", "#", self.errors[-1][3]) == key:
+            e = self.errors[-1]
+            e[1], e[2] = ts, e[2] + 1
+            return False
+        self.errors.append([ts, ts, 1, text])
+        return True
+
+    def _end_call(self, ts, reason):
+        c = self.call
+        if not c:
+            return
+        c.end = ts
+        if c.answered:
+            c.result = "answered"
+        elif c.dir == "in":
+            c.result = "missed" if not reason or "closed" in reason.lower() else reason
+        else:
+            c.result = reason or "no answer"
+        self.calls.append(c)
+        self.call = None
+
+    # -- the parser --
+    def feed(self, ts, raw):
+        """Returns (kind, text): kind in call/state/error/info/noise."""
+        self.lines += 1
+        warn = bool(WARN_ANSI.search(raw))
+        msg = ANSI.sub("", raw).strip()
+        if not msg:
+            return "noise", msg
+        kind = "info"
+
+        if msg.startswith("Started ") and "rejack" in msg.lower():
+            self.started, self.state, self.state_ts, self.call, self.offhook = ts, "IDLE", ts, None, False
+            self._event(ts, "state", "service started")
+            return "state", msg
+        if msg.startswith(("Stopping ", "Stopped ")) or "terminated by signal" in msg:
+            self._end_call(ts, "service stopped")
+            self.state = "STOPPED"
+            self._event(ts, "error" if "signal" in msg else "state", msg)
+            return "state", msg
+
+        m = TRANS.match(msg)
+        if m:
+            old, ev, new = m.groups()
+            self.state, self.state_ts = new, ts
+            if ev == "OFFHOOK":
+                self.offhook = True
+            elif ev == "ONHOOK":
+                self.offhook = False
+            else:
+                self.offhook = new in OFFHOOK_STATES or (self.offhook and new != "IDLE")
+            if new == "DIALTONE":
+                self.digits = ""
+            if new == "IDLE" and self.call:
+                self._end_call(ts, "")
+            self._event(ts, "state", f"{old} → {new}  ({ev.lower()})")
+            return "state", msg
+
+        if msg.startswith("rejack: digit '"):
+            self.digits += msg[len("rejack: digit '"):-1]
+            return "state", msg
+        if msg.startswith("rejack: incoming call from"):
+            n = SIPNUM.search(msg)
+            self._end_call(ts, "")
+            self.call = Call("in", n.group(1) if n else "?", ts)
+            self._event(ts, "call", f"◀ incoming from {self.call.peer}")
+            return "call", msg
+        if msg.startswith("rejack: dialing"):
+            n = SIPNUM.search(msg)
+            self._end_call(ts, "")
+            self.call = Call("out", n.group(1) if n else "?", ts)
+            self._event(ts, "call", f"▶ dialing {self.call.peer}")
+            return "call", msg
+        if "Call established:" in msg and self.call:
+            self.call.answered = ts
+            self._event(ts, "call", f"● connected {'to' if self.call.dir == 'out' else 'from'} {self.call.peer}")
+            return "call", msg
+        if msg.startswith("rejack: call closed:"):
+            reason = msg.split(":", 2)[2].strip()
+            c = self.call
+            self._end_call(ts, reason)
+            if c:
+                d = f" after {fmt_dur(c.duration(ts))}" if c.answered else ""
+                self._event(ts, "call" if c.result == "answered" else "error",
+                            f"■ {c.dir} {c.peer}: {c.result}{d} ({reason})")
+                if c.result != "answered" and c.dir == "out":
+                    self._error(ts, f"call to {c.peer}: {reason}")
+            return "call", msg
+
+        m = REGLINE.match(msg)
+        if m:
+            ok = m.group(2) == "200"
+            self.reg = (ok, f"{m.group(1)} {m.group(2)} {m.group(3)}", ts)
+            self._event(ts, "state" if ok else "error", f"SIP registration {m.group(2)} {m.group(3)}")
+            if not ok:
+                self._error(ts, msg)
+            return ("state" if ok else "error"), msg
+        if "regist" in msg.lower() and ERRWORDS.search(msg):
+            self.reg = (False, msg, ts)
+
+        if msg.startswith("rejack: using "):
+            self.dev = (True, msg.split("using ", 1)[1], ts)
+            self._event(ts, "state", f"dongle attached ({self.dev[1]})")
+            return "state", msg
+        if msg.startswith(("rejack: magicJack lost", "rejack: magicJack not found")):
+            if not self.dev or self.dev[0]:
+                self.drops += 1
+            self.dev = (False, msg.split(": ", 1)[1], ts)
+            self._end_call(ts, "dongle lost")
+            kind = "error"
+        if msg.startswith(("rejack: line-down", "rejack: line-up")):
+            self.alert = ("down" if "line-down" in msg else "up", msg.split(": ", 2)[-1], ts)
+            kind = "error" if "line-down" in msg else "state"
+
+        if warn or kind == "error" or ERRWORDS.search(msg):
+            if self._error(ts, msg):
+                self._event(ts, "error", msg)
+            return "error", msg
+        return kind, msg
+
+
+# ---- polled system facts ------------------------------------------------------------------------
+
+def sh(*cmd):
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=3).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+
+def read(path):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def service(unit):
+    out = sh("systemctl", "show", unit, "-p", "ActiveState,SubState,MainPID,ActiveEnterTimestampMonotonic,NRestarts")
+    d = dict(l.split("=", 1) for l in out.splitlines() if "=" in l)
+    up = None
+    try:
+        mono = int(d.get("ActiveEnterTimestampMonotonic", "0")) / 1e6
+        if mono:
+            up = time.clock_gettime(time.CLOCK_MONOTONIC) - mono
+    except ValueError:
+        pass
+    return {"active": d.get("ActiveState", "?"), "sub": d.get("SubState", "?"), "pid": d.get("MainPID", "0"),
+            "up": up, "restarts": d.get("NRestarts", "?")}
+
+
+def dongle():
+    for dev in glob.glob("/sys/bus/usb/devices/*"):
+        if read(f"{dev}/idVendor") == VID and read(f"{dev}/idProduct") == PID:
+            port = os.path.basename(dev)
+            speed = read(f"{dev}/speed")
+            hid = [os.path.basename(h) for h in glob.glob(f"{dev}/*/*/hidraw/hidraw*")]
+            cards = read("/proc/asound/cards")
+            m = re.search(r"^\s*(\d+) \[TigerJet", cards, re.M)
+            return {"port": port, "speed": speed, "hid": hid[0] if hid else "", "card": m.group(1) if m else ""}
+    return None
+
+
+# ---- journal reader -----------------------------------------------------------------------------
+
+def journal(unit, since, follow):
+    cmd = ["journalctl", "-u", unit, "-o", "json", "--no-pager", "--since", since]
+    if follow:
+        cmd.append("-f")
+    try:
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    except OSError as e:
+        sys.exit(f"rejack: cannot run journalctl ({e})")
+    for line in p.stdout:
+        try:
+            j = json.loads(line)
+        except ValueError:
+            continue
+        m = j.get("MESSAGE", "")
+        if isinstance(m, list):
+            m = bytes(m).decode("utf-8", "replace")
+        yield int(j.get("__REALTIME_TIMESTAMP", "0")) / 1e6, m
+
+
+def hhmmss(ts):
+    return dt.datetime.fromtimestamp(ts).strftime("%H:%M:%S") if ts else "--:--:--"
+
+
+def stamp(ts):
+    d = dt.datetime.fromtimestamp(ts)
+    return d.strftime("%H:%M:%S" if d.date() == dt.date.today() else "%b %d %H:%M")
+
+
+# ---- views --------------------------------------------------------------------------------------
+
+def counts(model, now):
+    calls = list(model.calls) + ([model.call] if model.call else [])
+    cin = [c for c in calls if c.dir == "in"]
+    cout = [c for c in calls if c.dir == "out"]
+    return {"in": len(cin), "in_ans": sum(1 for c in cin if c.answered),
+            "in_missed": sum(1 for c in cin if c.end and not c.answered),
+            "out": len(cout), "out_ans": sum(1 for c in cout if c.answered),
+            "out_fail": sum(1 for c in cout if c.end and not c.answered),
+            "talk": sum(c.duration(now) for c in calls),
+            "errors": len(model.errors), "error_lines": sum(e[2] for e in model.errors)}
+
+
+def status_lines(model, unit, color=lambda s, k: s):
+    now = time.time()
+    s, d = service(unit), dongle()
+    ast = sh("systemctl", "is-active", "asterisk")
+    ok = lambda b: color("●", "ok" if b else "bad")
+    out = []
+    up = f"up {fmt_dur(s['up'])}" if s["up"] else ""
+    out.append(f"Service   {ok(s['active'] == 'active')} {s['active']} ({s['sub']})  pid {s['pid']}  {up}"
+               f"  restarts {s['restarts']}      Asterisk {ok(ast == 'active')} {ast}")
+    if d:
+        sp = d["speed"] + "M" if d["speed"] else "?"
+        warn = "" if d["speed"] == "480" else color("  (not high-speed: use a USB 2.0 port)", "bad")
+        out.append(f"Dongle    {ok(True)} usb {d['port']} {sp}  /dev/{d['hid'] or '?'}  ALSA card "
+                   f"{d['card'] or '?'}{warn}   drops {model.drops}")
+    else:
+        out.append(f"Dongle    {ok(False)} not on USB   drops {model.drops}")
+    if model.dev and not model.dev[0]:
+        out.append(f"          {color('ReJack: ' + model.dev[1], 'bad')} (since {stamp(model.dev[2])})")
+    if model.reg:
+        out.append(f"SIP       {ok(model.reg[0])} {model.reg[1]}  ({stamp(model.reg[2])})")
+    else:
+        out.append("SIP       ○ no registration seen in this time window")
+    hook = {True: "OFF-HOOK", False: "on-hook", None: "?"}[model.offhook]
+    since = f"since {stamp(model.state_ts)}" if model.state_ts else ""
+    out.append(f"Line      {color(model.state, 'state')}  {hook}  {since}"
+               + (f"   digits {model.digits}" if model.state in ("DIALING", "DIALTONE") and model.digits else ""))
+    c = model.call
+    if c:
+        arrow = "◀ IN " if c.dir == "in" else "▶ OUT"
+        what = f"connected {fmt_dur(c.duration(now))}" if c.answered else f"ringing {fmt_dur(now - c.start)}"
+        out.append(f"Call      {color(arrow + ' ' + c.peer, 'call')}  {what}")
+    else:
+        out.append("Call      —")
+    if model.alert:
+        k, t, ts = model.alert
+        out.append(f"Alert     {color('LINE DOWN', 'bad') if k == 'down' else color('line restored', 'ok')}"
+                   f"  {t}  ({stamp(ts)})")
+    n = counts(model, now)
+    out.append(f"Calls     in {n['in']} (answered {n['in_ans']}, missed {n['in_missed']})   "
+               f"out {n['out']} (connected {n['out_ans']}, failed {n['out_fail']})   talk {fmt_dur(n['talk'])}"
+               f"   errors {n['errors']}" + (f" ({n['error_lines']} lines)" if n['error_lines'] > n['errors'] else ""))
+    return out
+
+
+def call_rows(model, limit):
+    now = time.time()
+    rows = list(model.calls)[-limit:]
+    if model.call:
+        rows.append(model.call)
+    out = []
+    for c in reversed(rows):
+        res = c.result or ("connected" if c.answered else "in progress")
+        out.append((f"{stamp(c.start):>12}  {'in ' if c.dir == 'in' else 'out'}  {c.peer:<16.16} "
+                    f"{res:<30.30} {fmt_dur(c.duration(now)) if c.answered else '':>6}",
+                    "call" if c.answered else ("bad" if c.end else "state")))
+    return out
+
+
+def error_rows(model, limit):
+    out = []
+    for first, last, n, text in reversed(list(model.errors)[-limit:]):
+        rep = f" ×{n} (last {stamp(last)})" if n > 1 else ""
+        out.append(f"{stamp(first):>12}  {text}{rep}")
+    return out
+
+
+def run_status(args):
+    model = Model()
+    for ts, m in journal(args.unit, args.since, False):
+        model.feed(ts, m)
+    tty = sys.stdout.isatty()
+    pal = {"ok": "32", "bad": "31", "state": "36", "call": "32"}
+    color = (lambda s, k: f"\x1b[{pal.get(k, '0')}m{s}\x1b[0m") if tty else (lambda s, k: s)
+    print(f"ReJack status — {dt.datetime.now():%Y-%m-%d %H:%M:%S}  (log since {args.since})\n")
+    for l in status_lines(model, args.unit, color):
+        print(l)
+    rows = call_rows(model, 10)
+    if rows:
+        print("\nRecent calls" + "\n" + "\n".join(color(r, k) for r, k in rows))
+    errs = error_rows(model, 8)
+    if errs:
+        print("\nErrors and warnings\n" + "\n".join(color(e, "bad") for e in errs))
+
+
+def run_verbose(args):
+    model = Model()
+    tty = sys.stdout.isatty()
+    pal = {"call": "1;32", "state": "36", "error": "1;31", "info": "0", "noise": "2"}
+    last, rep = None, 0
+    try:
+        for ts, raw in journal(args.unit, args.since if args.since_given else "now", True):
+            kind, msg = model.feed(ts, raw)
+            key = re.sub(r"\d+", "#", msg)
+            if key == last:
+                rep += 1
+                continue
+            if rep:
+                print(f"{'':>9}  … repeated {rep} more time{'s' if rep > 1 else ''}")
+            last, rep = key, 0
+            text = f"{hhmmss(ts)}  {msg}"
+            print(f"\x1b[{pal[kind]}m{text}\x1b[0m" if tty else text, flush=True)
+    except KeyboardInterrupt:
+        pass
+
+
+def run_visual(args):
+    import curses
+    model = Model()
+    q = queue.Queue()
+    threading.Thread(target=lambda: [q.put(x) for x in journal(args.unit, args.since, True)], daemon=True).start()
+
+    def main(scr):
+        curses.curs_set(0)
+        scr.timeout(500)
+        cp = {}
+        if curses.has_colors():
+            curses.use_default_colors()
+            for i, (k, c) in enumerate({"ok": curses.COLOR_GREEN, "bad": curses.COLOR_RED,
+                                        "state": curses.COLOR_CYAN, "call": curses.COLOR_GREEN,
+                                        "head": curses.COLOR_YELLOW}.items(), 1):
+                curses.init_pair(i, c, -1)
+                cp[k] = curses.color_pair(i)
+        all_lines, paused = False, False
+        raw = collections.deque(maxlen=500)
+        next_poll, status = 0, []
+        while True:
+            while True:
+                try:
+                    ts, m = q.get_nowait()
+                except queue.Empty:
+                    break
+                kind, msg = model.feed(ts, m)
+                if msg:
+                    raw.append((ts, kind, msg))
+            now = time.time()
+            if now >= next_poll:
+                status = status_lines(model, args.unit, lambda s, k: f"\0{k}\0{s}\0")
+                next_poll = now + 1
+            if paused:
+                ch = scr.getch()
+                if ch in (ord("p"), ord("P")):
+                    paused = False
+                elif ch in (ord("q"), ord("Q")):
+                    return
+                continue
+            h, w = scr.getmaxyx()
+            scr.erase()
+            y = 0
+
+            def put(text, attr=0, x=0):
+                nonlocal y
+                if y >= h - 1:
+                    return
+                try:
+                    scr.addnstr(y, x, text, max(0, w - x - 1), attr)
+                except curses.error:
+                    pass
+
+            def put_marked(text):
+                """status_lines() marks coloured spans as \\0key\\0text\\0: plain, key, text, plain, ..."""
+                nonlocal y
+                x = 0
+                parts = text.split("\0")
+                for i, seg in enumerate(parts):
+                    if i % 3 == 1:
+                        continue
+                    attr = cp.get(parts[i - 1], 0) | curses.A_BOLD if i % 3 == 2 else 0
+                    if y < h - 1 and x < w - 1:
+                        try:
+                            scr.addnstr(y, x, seg, w - x - 1, attr)
+                        except curses.error:
+                            pass
+                    x += len(seg)
+                y += 1
+
+            put(f" ReJack ─ magicJack A921 line", cp.get("head", 0) | curses.A_BOLD)
+            put(f"{dt.datetime.now():%Y-%m-%d %H:%M:%S}   [q]uit [v]{'events' if all_lines else 'all lines'} "
+                f"[p]ause [c]lear errors", 0, max(32, w - 66))
+            y += 2
+            for l in status:
+                put_marked(l)
+            y += 1
+            put("─ Recent calls " + "─" * max(0, w - 16), cp.get("head", 0))
+            y += 1
+            put(f"{'when':>12}  dir  {'number':<16} {'result':<30} {'talk':>6}", curses.A_DIM)
+            y += 1
+            for r, k in call_rows(model, 6)[:6] or [("          —", 0)]:
+                put(r, cp.get(k, 0) if k else 0)
+                y += 1
+            y += 1
+            put("─ Errors and warnings " + "─" * max(0, w - 23), cp.get("head", 0))
+            y += 1
+            for e in error_rows(model, 5)[:5] or ["          —"]:
+                put(e, cp.get("bad", 0) if e.strip() != "—" else 0)
+                y += 1
+            y += 1
+            put(f"─ {'All log lines' if all_lines else 'Events'} " + "─" * max(0, w - 16), cp.get("head", 0))
+            y += 1
+            room = h - 1 - y
+            if room > 0:
+                src = ([(t, k, m) for t, k, m in raw if k != "noise"] if all_lines
+                       else list(model.events))[-room:]
+                for ts, kind, text in src:
+                    put(f"{hhmmss(ts)}  {text}", cp.get({"error": "bad"}.get(kind, kind), 0))
+                    y += 1
+            scr.refresh()
+            ch = scr.getch()
+            if ch in (ord("q"), ord("Q"), 27):
+                return
+            if ch in (ord("v"), ord("V")):
+                all_lines = not all_lines
+            if ch in (ord("p"), ord("P")):
+                paused = True
+            if ch in (ord("c"), ord("C")):
+                model.errors.clear()
+
+    try:
+        curses.wrapper(main)
+    except KeyboardInterrupt:
+        pass
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="rejack", description="Watch the ReJack phone line (read-only).")
+    ap.add_argument("-v", "--verbose", action="store_true", help="follow every log line")
+    ap.add_argument("-V", "--visual", action="store_true", help="top-style live dashboard")
+    ap.add_argument("--since", default=None, help='journal start, e.g. "2026-11-20 08:00" (default: today)')
+    ap.add_argument("--unit", default="rejack.service")
+    args = ap.parse_args()
+    args.since_given = args.since is not None
+    if not args.since:
+        args.since = "today"
+    if args.visual:
+        run_visual(args)
+    elif args.verbose:
+        run_verbose(args)
+    else:
+        run_status(args)
+
+
+if __name__ == "__main__":
+    main()
