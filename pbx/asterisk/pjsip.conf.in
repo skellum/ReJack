@@ -1,6 +1,6 @@
 ; pjsip.conf — ReJack home PBX (rendered by pbx/install.sh; @...@ = from pbx/secrets.env)
 ; Extensions: 100 = ReJack (magicJack + analog phone), 101 = Linphone (cell), 102 = PC softphone.
-; Reachable only from localhost, the LAN and Tailscale (acl below). Never port-forward 5060.
+; Reachable only from localhost and the LAN (acl below). Never port-forward 5060.
 
 [global]
 type=global
