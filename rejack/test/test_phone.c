@@ -435,17 +435,39 @@ static void test_line_decode(void)
 	}
 	CHECK(changes == 1);
 
-	/* digit on rising edge only, even if bit 6 stays set for several polls */
+	/* TS52: bit 6 held with the new nibble; one digit, even if bit 6 stays set for several polls */
 	tjdev_line_decode(&st, OFF, 0xc5, &ln); CHECK(ln.digit == '5');
 	tjdev_line_decode(&st, OFF, 0xc5, &ln); CHECK(ln.digit == 0);
 	tjdev_line_decode(&st, OFF, 0x85, &ln); CHECK(ln.digit == 0);
+	for (int i = 0; i < TJ_DTMF_STROBE; i++)
+		tjdev_line_decode(&st, OFF, 0x85, &ln);
 	tjdev_line_decode(&st, OFF, 0xc5, &ln); CHECK(ln.digit == '5');   /* same key pressed again */
+	tjdev_line_decode(&st, OFF, 0x85, &ln); CHECK(ln.digit == 0);
+
+	/* VTech, trace 2026-11-21 (20 ms polls): 1 2 3 change only the nibble; 4 and 0 strobe bit 6 later */
+	{
+		static const uint8_t seq[] = { 0x81, 0x81, 0x82, 0x82, 0x83, 0x83, 0x84, 0x84, 0xc4, 0x84,
+		                               0x8a, 0x8a, 0xca, 0x8a, 0x8a };
+		char got[8] = { 0 };
+		int n = 0;
+		for (size_t i = 0; i < sizeof(seq); i++) {
+			tjdev_line_decode(&st, OFF, seq[i], &ln);
+			if (ln.digit && n < 7)
+				got[n++] = ln.digit;
+		}
+		CHECK(!strcmp(got, "12340"));
+	}
+	/* the same key twice: the second press shows only as a bit-6 strobe */
+	for (int i = 0; i < TJ_DTMF_STROBE; i++)
+		tjdev_line_decode(&st, OFF, 0x8a, &ln);
+	tjdev_line_decode(&st, OFF, 0xca, &ln); CHECK(ln.digit == '0');
 
 	/* on-hook: no digits reported while on-hook */
 	for (int i = 0; i < TJ_HOOK_DEBOUNCE; i++)
 		tjdev_line_decode(&st, ON, 0x85, &ln);
 	CHECK(ln.hook_changed && !ln.offhook);
 	tjdev_line_decode(&st, ON, 0xc7, &ln); CHECK(ln.digit == 0);
+	tjdev_line_decode(&st, ON, 0x83, &ln); CHECK(ln.digit == 0);        /* nibble change on-hook */
 
 	/* phone already off-hook (and a stale digit latched) when Rejack starts */
 	struct tj_lstate st2 = { 0 };

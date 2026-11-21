@@ -44,7 +44,8 @@ int  tjdev_reg_write(struct tjdev *dev, uint8_t reg, uint8_t val);
  *   0x34 bit 6    dial tone on command
  *   0x3D bits 4+5 ring drive (H-bridge flips at ring frequency)
  *   0x58 bit 1    off-hook
- *   0x15          DTMF decoder: bit 6 = digit present, low nibble = code (1-9, A=0, B=*, C=#)
+ *   0x15          DTMF decoder: low nibble = last digit (1-9, A=0, B=*, C=#), bit 6 = short "digit
+ *                 present" strobe (not seen for every digit on every phone)
  */
 
 /* Take over the line from the chip's standalone mode: automatic dial tone off, ring off.
@@ -60,7 +61,7 @@ int  tjdev_ring(struct tjdev *dev, bool on);
 struct tj_line {
 	bool offhook;    /* debounced */
 	bool hook_changed;
-	char digit;      /* new DTMF digit (rising edge of 0x15 bit 6), or 0 */
+	char digit;      /* new DTMF digit (0x15 nibble change, or bit-6 edge for a repeated key), or 0 */
 };
 
 /* Decoder state; zero-initialise. */
@@ -69,10 +70,13 @@ struct tj_lstate {
 	bool    offhook;     /* debounced state */
 	bool    raw_last;
 	uint8_t stable;      /* consecutive polls raw == raw_last */
-	bool    dtmf_last;
+	bool    dtmf_last;   /* bit 6 at the previous poll */
+	uint8_t dtmf_nib;    /* low nibble at the previous poll */
+	uint8_t dtmf_pending;/* polls left in which a bit-6 edge belongs to the last nibble change */
 };
 
 #define TJ_HOOK_DEBOUNCE 3   /* polls (x 20 ms) */
+#define TJ_DTMF_STROBE   5   /* polls (x 20 ms) after a nibble change in which bit 6 is its strobe */
 
 /* Pure decoder (unit-tested): feed one poll of regs 0x58 and 0x15. */
 void tjdev_line_decode(struct tj_lstate *s, uint8_t r58, uint8_t r15, struct tj_line *out);

@@ -8,6 +8,12 @@ Newest first. Commit hashes refer to this repository.
 
 ## [Unreleased]: in progress
 
+**Outgoing digits with a VTech handset** (2026-11-21)
+- 🔄 Calls in worked but calls out failed: 101 arrived as `0`. A register trace (new `tjprobe trace`) showed
+  that `0x15` bit 6, which Rejack used as "digit present", pulses for ~20 ms on some digits and never appears on
+  others; the low nibble changes on every digit. Rejack now takes a nibble change as a digit, and a bit-6 edge
+  only for the same key pressed twice. 4 new unit checks from the trace (162 total).
+
 **Line monitor** (2026-11-21)
 - ✅ `tools/rejack`: one-shot status, `-v` live log (calls, state changes and errors highlighted, repeats
   folded) and `--visual`, a top-style dashboard: service, dongle (USB port, speed, hidraw, ALSA card), SIP

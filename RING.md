@@ -12,7 +12,7 @@ TS52 PRO buttset. Everything after the summary is the dated lab notebook that go
 | Talk battery | None: on from power-up (34 V on-hook, 14 mA loop). No software line-enable exists | Buttset, both drivers |
 | Ring | `0x3D \|= 0x30` on, `&= 0xCF` off; the 20 Hz square wave is hardware, the 2 s / 4 s cadence is the host's | Ring detected on every burst |
 | Hook | `0x58` bit 1 (set = off-hook) | 4 of 4 transitions |
-| DTMF | `0x15`: bit 6 = digit present, low nibble = digit (1–9, A = 0, B = `*`, C = `#`) | 6 of 6 digits |
+| DTMF | `0x15`: low nibble = last digit (1–9, A = 0, B = `*`, C = `#`); a change = new digit. Bit 6 = short "present" strobe, missing for some digits on some phones | 6 of 6 digits (TS52); 1 2 3 4 0 (VTech, nibble) |
 | Dial tone | `0x34` bit 5 = automatic on off-hook (power-up `0x26`), bit 6 = on command | By ear |
 
 Ring voltage is not yet measured (a published bulletin for the first-generation dongle gives about 85 V square

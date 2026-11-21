@@ -233,10 +233,16 @@ char tjdev_dtmf_char(uint8_t r15)
 	return (r15 & 0x40) ? map[r15 & 0x0F] : 0;
 }
 
+static char dtmf_nibble_char(uint8_t r15)
+{
+	return tjdev_dtmf_char((uint8_t)(r15 | 0x40));
+}
+
 void tjdev_line_decode(struct tj_lstate *s, uint8_t r58, uint8_t r15, struct tj_line *out)
 {
 	bool raw = (r58 & 0x02) != 0;
 	bool dv  = (r15 & 0x40) != 0;
+	uint8_t nib = r15 & 0x0F;
 
 	memset(out, 0, sizeof(*out));
 	if (!s->init) {
@@ -246,6 +252,8 @@ void tjdev_line_decode(struct tj_lstate *s, uint8_t r58, uint8_t r15, struct tj_
 		s->raw_last = raw;
 		s->stable = 0;
 		s->dtmf_last = dv;           /* don't report a digit latched before we started */
+		s->dtmf_nib = nib;
+		s->dtmf_pending = 0;
 	}
 
 	if (raw == s->raw_last) {
@@ -262,8 +270,26 @@ void tjdev_line_decode(struct tj_lstate *s, uint8_t r58, uint8_t r15, struct tj_
 	}
 	out->offhook = s->offhook;
 
-	if (dv && !s->dtmf_last && s->offhook)
-		out->digit = tjdev_dtmf_char(r15);
+	/*
+	 * A new digit shows up as a change of the low nibble. Bit 6 is not reliable: with some phones it pulses
+	 * for ~20 ms about 40 ms after the nibble changes, and for some digits it never appears at a 10 ms poll
+	 * (VTech, 2026-11-21). So a nibble change is a digit, and a bit-6 rising edge is a digit only when it is
+	 * not the strobe of a nibble change just reported: that catches the same key twice in a row.
+	 */
+	if (s->dtmf_pending)
+		s->dtmf_pending--;
+	if (nib != s->dtmf_nib) {
+		if (s->offhook)
+			out->digit = dtmf_nibble_char(r15);
+		s->dtmf_nib = nib;
+		s->dtmf_pending = dv ? 0 : TJ_DTMF_STROBE;
+	}
+	else if (dv && !s->dtmf_last) {
+		if (s->dtmf_pending)
+			s->dtmf_pending = 0;     /* the strobe of the digit already reported */
+		else if (s->offhook)
+			out->digit = dtmf_nibble_char(r15);
+	}
 	s->dtmf_last = dv;
 }
 

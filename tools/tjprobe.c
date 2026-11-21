@@ -28,6 +28,8 @@
  *   tjprobe hook       Poll the hook bit (0x58 bit 1 = off-hook) and the chip DTMF decoder (0x15, per GVJack).
  *   tjprobe write REG VAL   Write one TigerJet register (hex), print the inputs before/after.
  *   tjprobe inputs     Read-only one-liner: GIO/AUX levels + registers seen to change.
+ *   tjprobe trace      Read-only. Every change of 0x58 (hook) and 0x15 (DTMF), ms timestamps, 10 ms poll.
+ *                      Stop ReJack first (two readers of the registers scramble each other).
  *   tjprobe watch      Read-only. Prints HID input reports and TJ registers 0x00-0x7F that change.
  *
  * Framing (non-ARM TigerJet, 32-byte feature report, no report ID), from public RE work in
@@ -373,6 +375,30 @@ int main(int argc, char **argv) {
             lastd = dv;
             msleep(50);
         }
+    } else if (!strcmp(mode, "trace")) {
+        /* Read-only, for digit/hook problems: print every change of 0x58 (hook) and 0x15 (DTMF) with a
+         * millisecond timestamp, polling every 10 ms. Stop ReJack first: two readers scramble each other. */
+        int l58 = -2, l15 = -2;
+        struct timespec t0, t;
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        printf("# trace: 0x58 bit1 = off-hook, 0x15 bit6 = digit present, low nibble = digit. Ctrl-C to stop\n");
+        for (;;) {
+            int h = rd(fd, 0x58), d = rd(fd, 0x15);
+            if (h != l58 || d != l15) {
+                static const char map[] = "D1234567890*#ABC";
+                clock_gettime(CLOCK_MONOTONIC, &t);
+                long ms = (t.tv_sec - t0.tv_sec) * 1000 + (t.tv_nsec - t0.tv_nsec) / 1000000;
+                printf("%7ld ms  0x58=%02x %-8s  0x15=%02x%s", ms, h & 0xff, h < 0 ? "err" : (h & 2) ? "OFF-HOOK" : "on-hook",
+                       d & 0xff, d < 0 ? " err" : "");
+                if (d >= 0 && (d & 0x40))
+                    printf("  digit '%c'", map[d & 0x0F]);
+                printf("\n");
+                fflush(stdout);
+                l58 = h;
+                l15 = d;
+            }
+            msleep(10);
+        }
     } else if (!strcmp(mode, "inputs") || !strcmp(mode, "write")) {
         unsigned char r[128];
         if (!strcmp(mode, "write")) {
@@ -428,7 +454,7 @@ int main(int argc, char **argv) {
             msleep(150);
         }
     } else {
-        fprintf(stderr, "usage: %s [get|regs|gpio|inputs|write R V|init580|ring [n]|hook|slic|slic-reset|watch|activate [snap]|restore snap]\n", argv[0]);
+        fprintf(stderr, "usage: %s [get|regs|gpio|inputs|write R V|init580|ring [n]|hook|trace|slic|slic-reset|watch|activate [snap]|restore snap]\n", argv[0]);
         return 2;
     }
     close(fd);
