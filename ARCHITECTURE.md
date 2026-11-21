@@ -50,7 +50,7 @@ Asterisk is the switch core. Mapped onto BORSCHT:
 | **O**vervoltage protection | magicJack hardware (minimal) |
 | **R**inging | Generated per line on the magicJack (booster plus H-bridge, square wave); ReJack keys it (reg `0x3D`) and times the 2 s on / 4 s off cadence |
 | **S**upervision | magicJack senses the loop; ReJack reads it (reg `0x58`), debounces it and reports off-hook/on-hook to the switch |
-| **C**odec | magicJack chip: G.711 at 8 kHz over USB audio; ReJack carries it to and from SIP |
+| **C**odec | magicJack chip: A/D and D/A, 16-bit PCM at 8 kHz over USB audio; baresip encodes G.711 μ-law for SIP |
 | **H**ybrid (2-to-4 wire) | magicJack hardware |
 | **T**esting | `tools/tjprobe` (register-level probe) |
 
@@ -77,7 +77,7 @@ An incoming call is the mirror image: Asterisk sends ReJack an INVITE, ReJack ri
 |---|---|
 | Line card, switch, calls in both directions, clean audio | ✅ Working |
 | ReJack as a service: start at boot, auto-restart, restore the line after a crash; survives unplug/replug | ✅ Working |
-| Line-down alert: dongle missing or dropping off for 2 min → emergency contacts notified; "restored" when it's back | ✅ Working |
+| Line-down alert: dongle missing or dropping off for 2 min → emergency contacts notified; "restored" when it's back | ✅ Unit tested; ⏳ deploy and test with a real unplug |
 | 911 fallback (announcement, recording, alerts) | ✅ Unit tested; ⏳ end-to-end run against the test congestion |
 | Unreachable extension: voicemail (Asterisk `VoiceMail`, message waiting via `mailboxes=`) | ⏳ Configured, being tested |
 | Phone number and outside calls: SIP trunk provider in Asterisk, plus E911 | ⏳ Missing |

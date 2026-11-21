@@ -78,7 +78,8 @@ list.
 |---|---|
 | Line card functions (talk battery, ring, hook, DTMF, dial tone) | ✅ Verified on hardware |
 | Calls through Asterisk | ✅ Both directions, clean audio |
-| Service resilience (boot start, crash restart, hot-plug, chip restore, line-down alert) | ✅ Working |
+| Service resilience (boot start, crash restart, hot-plug, chip restore) | ✅ Working |
+| Line-down alert to the emergency contacts | ✅ Unit tested · ⏳ deploy and test with a real unplug |
 | 911 fallback (announcement, recording, alerts) | ✅ Unit tested · ⏳ end-to-end run next |
 | Voicemail on Asterisk, message waiting in softphones | ⏳ Configured, being tested |
 | Real phone number through a SIP trunk provider, with E911 | ⏳ Next |
