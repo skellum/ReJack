@@ -6,7 +6,7 @@ add_compile_definitions(_DEFAULT_SOURCE)
 add_compile_options(-Wall -Wextra)
 
 # --- Core logic: no baresip dependency, always built and tested ------------------
-add_library(rejack_core STATIC src/phone.c src/tones.c src/tjdev.c src/e911.c src/linemon.c)
+add_library(rejack_core STATIC src/phone.c src/tones.c src/tjdev.c src/e911.c src/linemon.c src/dtmfdet.c)
 set_target_properties(rejack_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_link_libraries(rejack_core PUBLIC m)
 
@@ -14,6 +14,8 @@ enable_testing()
 add_executable(test_phone test/test_phone.c)
 target_link_libraries(test_phone rejack_core)
 add_test(NAME phone COMMAND test_phone)
+add_executable(dtmfscan test/dtmfscan.c)
+target_link_libraries(dtmfscan rejack_core)
 
 # --- baresip module (needs libre + libbaresip v4.12 installed, see README) -------
 find_package(PkgConfig REQUIRED)

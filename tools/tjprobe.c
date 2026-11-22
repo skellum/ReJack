@@ -30,7 +30,7 @@
  *   tjprobe inputs     Read-only one-liner: GIO/AUX levels + registers seen to change.
  *   tjprobe trace      Read-only. Every change of 0x58 (hook) and 0x15 (DTMF), ms timestamps, 10 ms poll.
  *                      Stop ReJack first (two readers of the registers scramble each other).
- *   tjprobe watch      Read-only. Prints HID input reports and TJ registers 0x00-0x7F that change.
+ *   tjprobe watch [ms] Read-only, every ms (default 150; 0 = flat out, ~16 ms). Prints HID input reports and TJ registers 0x00-0x7F that change.
  *
  * Framing (non-ARM TigerJet, 32-byte feature report, no report ID), from public RE work in
  * github.com/Gbrothers1/magicjack-hacking and TigerJet's tjctl.c:
@@ -426,15 +426,19 @@ int main(int argc, char **argv) {
         /* Read-only: print HID input reports (hook/keys) and any TJ register 0x00-0x7F that changes.
          * Lift/hang up the handset and press keys while this runs. Ctrl-C to stop. */
         unsigned char prev[128], cur[128];
-        int have = 0;
+        int have = 0, period = argc > 2 ? atoi(argv[2]) : 150;
+        struct timespec t0, t;
         int fl = fcntl(fd, F_GETFL);
         fcntl(fd, F_SETFL, fl | O_NONBLOCK);
-        printf("# watching; lift/replace handset, press keys. Ctrl-C to stop.\n");
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        printf("# watching every %d ms; lift/replace handset, press keys. Ctrl-C to stop.\n", period);
         for (;;) {
             unsigned char in[8];
             int n;
+            clock_gettime(CLOCK_MONOTONIC, &t);
+            long ms = (t.tv_sec - t0.tv_sec) * 1000 + (t.tv_nsec - t0.tv_nsec) / 1000000;
             while ((n = read(fd, in, sizeof in)) > 0) {
-                printf("[input] %d bytes:", n);
+                printf("%7ld ms [input] %d bytes:", ms, n);
                 for (int i = 0; i < n; i++) printf(" %02x", in[i]);
                 if (n >= 2) printf("   hook=%s dtmf=%d", (in[1] & 0x80) ? "OFF" : "on", in[0] & 0x0F);
                 printf("\n");
@@ -446,15 +450,15 @@ int main(int argc, char **argv) {
             if (have) {
                 for (int r = 0; r < 128; r++)
                     if (cur[r] != prev[r])
-                        printf("[reg] 0x%02x: %02x -> %02x\n", r, prev[r], cur[r]);
+                        printf("%7ld ms [reg] 0x%02x: %02x -> %02x\n", ms, r, prev[r], cur[r]);
             }
             memcpy(prev, cur, sizeof prev);
             have = 1;
             fflush(stdout);
-            msleep(150);
+            if (period > 0) msleep(period);
         }
     } else {
-        fprintf(stderr, "usage: %s [get|regs|gpio|inputs|write R V|init580|ring [n]|hook|trace|slic|slic-reset|watch|activate [snap]|restore snap]\n", argv[0]);
+        fprintf(stderr, "usage: %s [get|regs|gpio|inputs|write R V|init580|ring [n]|hook|trace|slic|slic-reset|watch [ms]|activate [snap]|restore snap]\n", argv[0]);
         return 2;
     }
     close(fd);

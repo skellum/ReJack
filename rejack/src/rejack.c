@@ -2,7 +2,9 @@
  * @file rejack.c  Rejack — magicJack A921 FXS port as a baresip phone.
  *
  * baresip "application" module that turns the analog phone on the dongle into the user interface:
- *   - hook (reg 0x58) + DTMF (reg 0x15), polled  -> call state machine (phone.c)
+ *   - hook (reg 0x58), polled                    -> call state machine (phone.c)
+ *   - DTMF: decoded from the line audio (dtmfdet.c) while no call is up; the chip's decoder
+ *     (reg 0x15) is the fallback if the capture can't be opened
  *   - dial tone                                  -> chip tone generator (reg 0x34), or software
  *   - other call-progress tones (ringback, busy) -> baresip player on the dongle's ALSA device
  *   - ring cadence                               -> tjdev_ring() (reg 0x3D)
@@ -26,6 +28,7 @@
   rejack_record_dir  /var/lib/rejack/recordings
   rejack_record_dev  hw:TigerJet,0     # capture device for the fallback recording
   rejack_dtmf        inband            # inband | send  (send = also signal digits to the far end)
+  rejack_dtmf_detect audio             # audio (decode the capture, default) | chip (reg 0x15 only)
   rejack_dialtone    hw                # hw (chip generator, default) | sw (baresip player)
   rejack_line_alert  120               # s the line may be down before the hook gets "line-down" (0 = off)
  \endverbatim
@@ -46,7 +49,9 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <re.h>
+#include <rem.h>
 #include <baresip.h>
+#include "dtmfdet.h"
 #include "e911.h"
 #include "phone.h"
 #include "tjdev.h"
@@ -91,6 +96,16 @@ struct rejack {
 	char e911_status[256];
 	uint32_t e911_max_age_h;
 
+	/* DTMF from the line audio. The capture shares hw:TigerJet,0 with call audio and the emergency
+	 * recording, so it runs only in the idle/dialing states (dtmf_sync). The ALSA read thread runs
+	 * the detector and hands digits to the main thread through dtmf_mq. */
+	bool             dtmf_audio;     /* rejack_dtmf_detect audio */
+	struct ausrc_st *dtmf_src;
+	struct mqueue   *dtmf_mq;
+	struct dtmfdet   dtmf;
+	uint64_t         dtmf_retry_at;  /* after a failed open, don't retry before this (ms) */
+	bool             dtmf_warned;
+
 	struct linemon lm;           /* line-down alert */
 	uint32_t line_alert_s;
 	char     lost_why[64];       /* last reason the dongle was lost */
@@ -98,6 +113,8 @@ struct rejack {
 
 static struct rejack rj;
 
+
+static void dtmf_close(void);
 
 /* ---- phone ops -------------------------------------------------------- */
 
@@ -213,6 +230,7 @@ static int op_dial(const char *digits, void *arg)
 
 	info("rejack: dialing %s\n", uri);
 	op_tone(TONE_NONE, NULL);      /* free the ALSA device for call audio */
+	dtmf_close();
 	err = ua_connect(ua, &rj.call, NULL, uri, VIDMODE_OFF);
 	if (!err)
 		rj.ua = ua;
@@ -230,6 +248,7 @@ static int op_answer(void *arg)
 	if (!rj.call)
 		return ENOENT;
 	op_tone(TONE_NONE, NULL);
+	dtmf_close();
 	info("rejack: answering\n");
 	return ua_answer(rj.ua, rj.call, VIDMODE_OFF);
 }
@@ -393,6 +412,7 @@ static void line_check(void)
 
 static void start_recording(void)
 {
+	dtmf_close();                    /* arecord needs the capture device */
 	char ts[32];
 	time_t now = time(NULL);
 	struct tm tm;
@@ -477,6 +497,8 @@ static const struct ph_ops ops = {
 
 /* ---- hardware events -------------------------------------------------- */
 
+static void dtmf_sync(void);
+
 static void feed(enum ph_event ev, char digit)
 {
 	enum ph_state before = rj.ph.st;
@@ -485,6 +507,108 @@ static void feed(enum ph_event ev, char digit)
 	if (rj.ph.st != before)
 		info("rejack: %s --%s--> %s\n", phone_state_str(before),
 		     phone_event_str(ev), phone_state_str(rj.ph.st));
+	dtmf_sync();
+}
+
+static void on_digit(char digit, const char *src)
+{
+	if (rj.hw_dt_on) {               /* the chip doesn't cut forced dial tone itself */
+		(void)tjdev_dialtone(rj.dev, false);
+		rj.hw_dt_on = false;
+	}
+	info("rejack: digit '%c' (%s)\n", digit, src);
+	feed(EV_DIGIT, digit);
+}
+
+
+/* ---- DTMF from the line audio ------------------------------------------ */
+
+#define DTMF_RETRY_MS 2000
+enum { DTMF_MQ_DIGIT, DTMF_MQ_ERROR };
+
+/* ALSA read thread: detector only, no state touched outside rj.dtmf. */
+static void dtmf_read(struct auframe *af, void *arg)
+{
+	char got[8];
+	size_t n;
+	(void)arg;
+
+	if (af->fmt != AUFMT_S16LE)
+		return;
+	n = dtmfdet_feed(&rj.dtmf, af->sampv, af->sampc, got, sizeof(got));
+	for (size_t i = 0; i < n; i++)
+		(void)mqueue_push(rj.dtmf_mq, DTMF_MQ_DIGIT, (void *)(intptr_t)got[i]);
+}
+
+static void dtmf_error(int err, const char *str, void *arg)
+{
+	(void)arg;
+	(void)str;
+	(void)mqueue_push(rj.dtmf_mq, DTMF_MQ_ERROR, (void *)(intptr_t)err);
+}
+
+static void dtmf_close(void)
+{
+	rj.dtmf_src = mem_deref(rj.dtmf_src);   /* joins the read thread */
+}
+
+/* main thread */
+static void dtmf_mq_handler(int id, void *data, void *arg)
+{
+	(void)arg;
+
+	if (id == DTMF_MQ_ERROR) {
+		warning("rejack: DTMF capture error (%m), reopening\n", (int)(intptr_t)data);
+		dtmf_close();
+		rj.dtmf_retry_at = now_ms() + DTMF_RETRY_MS;
+		return;
+	}
+	if (!rj.dtmf_src)
+		return;                      /* queued just before the capture closed for a call */
+	if (rj.ph.st == PH_DIALTONE || rj.ph.st == PH_DIALING)
+		on_digit((char)(intptr_t)data, "audio");
+}
+
+static bool dtmf_wanted(void)
+{
+	switch (rj.ph.st) {
+	case PH_IDLE:
+	case PH_DIALTONE:
+	case PH_DIALING:
+	case PH_DISCONNECTED:
+		return rj.dtmf_audio && rj.dev && rj.dtmf_mq;
+	default:
+		return false;                /* call audio or the emergency recording owns the device */
+	}
+}
+
+/* Open or close the capture to match the phone state. Called after every event and on each poll. */
+static void dtmf_sync(void)
+{
+	struct ausrc_prm prm = { DTMF_RATE, 1, 20, AUFMT_S16LE, 0 };
+	int err;
+
+	if (!dtmf_wanted()) {
+		dtmf_close();
+		return;
+	}
+	if (rj.dtmf_src || now_ms() < rj.dtmf_retry_at)
+		return;
+	dtmfdet_init(&rj.dtmf);
+	err = ausrc_alloc(&rj.dtmf_src, baresip_ausrcl(), rj.audio_mod, &prm, rj.record_dev,
+			  dtmf_read, dtmf_error, NULL);
+	if (err) {
+		rj.dtmf_src = NULL;
+		rj.dtmf_retry_at = now_ms() + DTMF_RETRY_MS;
+		if (!rj.dtmf_warned)
+			warning("rejack: DTMF capture on %s failed (%m): using the chip's decoder\n",
+				rj.record_dev, err);
+		rj.dtmf_warned = true;
+		return;
+	}
+	if (rj.dtmf_warned)
+		info("rejack: DTMF capture on %s open again\n", rj.record_dev);
+	rj.dtmf_warned = false;
 }
 
 #define ATTACH_RETRY_MS 2000
@@ -575,14 +699,9 @@ static void poll_tick(void *arg)
 	line_check();
 	if (ln.hook_changed)
 		feed(ln.offhook ? EV_OFFHOOK : EV_ONHOOK, 0);
-	if (ln.digit) {
-		if (rj.hw_dt_on) {           /* the chip doesn't cut forced dial tone itself */
-			(void)tjdev_dialtone(rj.dev, false);
-			rj.hw_dt_on = false;
-		}
-		info("rejack: digit '%c'\n", ln.digit);
-		feed(EV_DIGIT, ln.digit);
-	}
+	if (ln.digit && !rj.dtmf_src)    /* chip decoder: only when the audio detector isn't running */
+		on_digit(ln.digit, "chip");
+	dtmf_sync();
 	tmr_start(&rj.tmr_poll, POLL_MS, poll_tick, NULL);
 }
 
@@ -717,11 +836,13 @@ static void load_config(struct ph_config *pc)
 	(void)conf_get_u32(conf, "rejack_line_alert", &rj.line_alert_s);
 	v[0] = '\0';
 	rj.send_dtmf = !conf_get_str(conf, "rejack_dtmf", v, sizeof(v)) && !strcmp(v, "send");
+	v[0] = '\0';
+	rj.dtmf_audio = !(!conf_get_str(conf, "rejack_dtmf_detect", v, sizeof(v)) && !strcmp(v, "chip"));
 
-	info("rejack: hid=%s tones=%s,%s dialtone=%s 911=%s dtmf=%s\n", rj.hid, rj.audio_mod,
+	info("rejack: hid=%s tones=%s,%s dialtone=%s 911=%s dtmf=%s detect=%s\n", rj.hid, rj.audio_mod,
 	     rj.audio_dev, rj.hw_dialtone ? "hw" : "sw",
 	     pc->e911 == E911_BLOCK ? "block" : pc->e911 == E911_ALLOW ? "allow" : "verified",
-	     rj.send_dtmf ? "send" : "inband");
+	     rj.send_dtmf ? "send" : "inband", rj.dtmf_audio ? "audio" : "chip");
 	if (!rj.emerg_hook[0])
 		warning("rejack: rejack_emergency_hook not set: 911 events notify nobody\n");
 	if (!rj.emerg_announce[0])
@@ -740,6 +861,9 @@ static int module_init(void)
 	load_config(&pc);
 	phone_init(&rj.ph, &pc, &ops, NULL);
 	linemon_init(&rj.lm, now_ms(), (uint64_t)rj.line_alert_s * 1000, LINE_STABLE_MS);
+	err = mqueue_alloc(&rj.dtmf_mq, dtmf_mq_handler, NULL);
+	if (err)
+		warning("rejack: mqueue_alloc failed (%m): using the chip's DTMF decoder\n", err);
 
 	tmr_init(&tmr_reap);
 	(void)op_e911_ok(NULL);                   /* log current E911 status at startup */
@@ -769,6 +893,8 @@ static int module_close(void)
 	tmr_cancel(&rj.tmr_phone);
 	tmr_cancel(&rj.tmr_ring);
 	tmr_cancel(&rj.tmr_poll);
+	dtmf_close();
+	rj.dtmf_mq = mem_deref(rj.dtmf_mq);
 	if (rj.dev)
 		(void)tjdev_release(rj.dev);   /* ring off, chip's automatic dial tone back on */
 	rj.play = mem_deref(rj.play);

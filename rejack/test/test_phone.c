@@ -8,6 +8,7 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include "../src/dtmfdet.h"
 #include "../src/e911.h"
 #include "../src/linemon.h"
 #include "../src/phone.h"
@@ -581,6 +582,135 @@ static void test_linemon(void)
 	CHECK(linemon_check(&m, 99999999, NULL) == LM_NONE);
 }
 
+/* ---- DTMF detector on synthetic audio ---- */
+
+struct sig { int16_t *x; size_t n, cap; double ph[4]; unsigned seed; };
+
+static void sig_add(struct sig *s, const double *f, int nf, double amp_db, unsigned ms, double noise_db)
+{
+	size_t n = (size_t)DTMF_RATE * ms / 1000;
+	if (s->n + n > s->cap) {
+		s->cap = (s->n + n) * 2;
+		s->x = realloc(s->x, s->cap * sizeof(*s->x));
+	}
+	double a = pow(10, amp_db / 20), na = pow(10, noise_db / 20);
+	for (size_t i = 0; i < n; i++) {
+		double v = 0;
+		for (int k = 0; k < nf; k++) {
+			v += a * sin(s->ph[k]);
+			s->ph[k] += 2 * M_PI * f[k] / DTMF_RATE;
+		}
+		if (noise_db > -200) {         /* uniform noise of RMS na */
+			s->seed = s->seed * 1103515245u + 12345u;
+			v += na * sqrt(3.0) * (((s->seed >> 8) & 0xFFFF) / 32768.0 - 1.0);
+		}
+		if (v > 1) v = 1;
+		if (v < -1) v = -1;
+		s->x[s->n++] = (int16_t)lrint(v * 32767);
+	}
+}
+
+static const double ROW[4] = { 697, 770, 852, 941 }, COL[4] = { 1209, 1336, 1477, 1633 };
+
+static void sig_key(struct sig *s, char key, double db, double twist_db, double ferr, unsigned on, unsigned off,
+		    double noise_db, const double *extra, int nextra)
+{
+	static const char *pad = "123A456B789C*0#D";
+	int i = (int)(strchr(pad, key) - pad);
+	double f[6] = { ROW[i / 4] * (1 + ferr), COL[i % 4] * (1 + ferr) };
+	int nf = 2;
+	for (int k = 0; k < nextra; k++)
+		f[nf++] = extra[k];
+	if (twist_db != 0) {            /* column tone twist_db louder than the row tone */
+		double fr[1] = { f[0] }, fc[1] = { f[1] };
+		size_t start = s->n;
+		double ph0 = s->ph[0];
+		sig_add(s, fr, 1, db, on, -300);
+		size_t n = s->n - start;
+		s->n = start;
+		struct sig t = { 0 };
+		t.ph[0] = s->ph[1];
+		sig_add(&t, fc, 1, db + twist_db, on, -300);
+		s->ph[0] = ph0;
+		sig_add(s, fr, 1, db, on, noise_db);
+		for (size_t k = 0; k < n; k++) {
+			int v = s->x[start + k] + t.x[k];
+			s->x[start + k] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+		}
+		s->ph[1] = t.ph[0];
+		free(t.x);
+	}
+	else
+		sig_add(s, f, nf, db, on, noise_db);
+	sig_add(s, NULL, 0, 0, off, noise_db);
+}
+
+static const char *detect(const struct sig *s, size_t chunk)
+{
+	static char got[64];
+	struct dtmfdet d;
+	size_t n = 0;
+
+	dtmfdet_init(&d);
+	for (size_t i = 0; i < s->n; i += chunk) {
+		size_t len = s->n - i < chunk ? s->n - i : chunk;
+		n += dtmfdet_feed(&d, s->x + i, len, got + n, sizeof(got) - 1 - n);
+	}
+	got[n] = '\0';
+	return got;
+}
+
+static void test_dtmfdet(void)
+{
+	static const double dial[2] = { 350, 440 };
+	struct sig s = { 0 };
+
+	/* every key, -10 dBFS per tone, 100 ms on / 100 ms off, fed in 160-sample (20 ms) frames */
+	for (const char *k = "1234567890*#ABCD"; *k; k++)
+		sig_key(&s, *k, -10, 0, 0, 100, 100, -300, NULL, 0);
+	CHECK(!strcmp(detect(&s, 160), "1234567890*#ABCD"));
+	CHECK(!strcmp(detect(&s, 1), "1234567890*#ABCD"));            /* chunking doesn't matter */
+	s.n = 0;
+
+	/* the case the chip misses: the same key again (pre-dial bursts: 70 ms on, 50 ms off) */
+	for (const char *k = "1110100"; *k; k++)
+		sig_key(&s, *k, -12, 0, 0, 70, 50, -300, NULL, 0);
+	CHECK(!strcmp(detect(&s, 160), "1110100"));
+	s.n = 0;
+
+	/* a long key press is one digit */
+	sig_key(&s, '5', -10, 0, 0, 1500, 200, -300, NULL, 0);
+	CHECK(!strcmp(detect(&s, 160), "5"));
+	s.n = 0;
+
+	/* quiet (-35 dBFS), twist of 6 dB either way, 1.5 % frequency error, noise 20 dB below */
+	sig_key(&s, '1', -35, 0, 0, 80, 80, -300, NULL, 0);
+	sig_key(&s, '2', -12, 6, 0, 80, 80, -300, NULL, 0);
+	sig_key(&s, '3', -12, -6, 0, 80, 80, -300, NULL, 0);
+	sig_key(&s, '4', -12, 0, 0.015, 80, 80, -300, NULL, 0);
+	sig_key(&s, '5', -12, 0, -0.015, 80, 80, -300, NULL, 0);
+	sig_key(&s, '6', -12, 0, 0, 80, 80, -32, NULL, 0);
+	CHECK(!strcmp(detect(&s, 160), "123456"));
+	s.n = 0;
+
+	/* first digit dialled over dial tone at the same level */
+	sig_add(&s, dial, 2, -13, 300, -300);
+	sig_key(&s, '9', -13, 0, 0, 100, 100, -300, dial, 2);
+	CHECK(!strcmp(detect(&s, 160), "9"));
+	s.n = 0;
+
+	/* not digits: too short (20 ms), too quiet (-50 dBFS), one tone only, dial tone, noise, 4 % off */
+	sig_key(&s, '1', -10, 0, 0, 20, 100, -300, NULL, 0);
+	sig_key(&s, '2', -50, 0, 0, 100, 100, -300, NULL, 0);
+	{ double f1[1] = { 770 }; sig_add(&s, f1, 1, -10, 200, -300); }
+	sig_add(&s, dial, 2, -10, 500, -300);
+	sig_add(&s, NULL, 0, 0, 500, -15);
+	sig_key(&s, '3', -10, 0, 0.04, 100, 100, -300, NULL, 0);
+	{ double f3[3] = { 697, 1209, 1336 }; sig_add(&s, f3, 3, -12, 200, -300); }   /* two columns */
+	CHECK(!strcmp(detect(&s, 160), ""));
+	free(s.x);
+}
+
 int main(void)
 {
 	test_outgoing_call();
@@ -603,6 +733,7 @@ int main(void)
 	test_line_decode();
 	test_e911_status_file();
 	test_linemon();
+	test_dtmfdet();
 
 	printf("%d checks, %d failures\n", checks, failures);
 	return failures ? 1 : 0;

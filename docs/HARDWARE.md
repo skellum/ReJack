@@ -155,7 +155,7 @@ bank `04 BB BB 00`, then GET). The analog line needs **no initialisation**:
 | Dial tone on command | `0x34` bit 6 | `|= 0x40` on, `&= 0x1F` all tone off |
 | Ring | `0x3D` bits 4+5 | `|= 0x30` ring, `&= 0xCF` stop; host does the 2 s / 4 s cadence |
 | Hook | `0x58` bit 1 | `0x03` off-hook, `0x01` on-hook; also HID report byte `0x09` bit 7 |
-| DTMF decoder | `0x15` | low nibble = last digit: 1–9, `A`=0, `B`=*, `C`=#; a change means a new digit. Bit 6 = "digit present" strobe: held with the TS52, a ~20 ms pulse or absent with a VTech handset; only needed for a repeated key |
+| DTMF decoder | `0x15` | low nibble = last digit: 1–9, `A`=0, `B`=*, `C`=#; a change means a new digit. Bit 6 = "digit present" strobe: held with the TS52, a ~20 ms pulse or absent with a VTech handset; so a repeated key leaves no trace. Ignores writes. ReJack decodes DTMF from the audio instead |
 
 Full derivation (magicJack and GVJack drivers, test logs) in [`RING.md`](../RING.md). Still unknown: ring voltage (Sandman's V1:
 ~85 V square wave), LED control.

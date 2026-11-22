@@ -11,13 +11,20 @@ and the analog phone plugged into it into a SIP phone. Project docs: [`../ARCHIT
 | `src/tones.[ch]` | North American call-progress tones (dial, ringback, busy, reorder, howler) | no |
 | `src/tjdev.[ch]` | Dongle access over hidraw: hook/keypad decode, TigerJet register R/W, ring/line power | no |
 | `src/linemon.[ch]` | Line-down monitor: when to send the "line down" / "restored" alerts | no |
+| `src/dtmfdet.[ch]` | DTMF detector (Goertzel) for the line audio | no |
 | `src/rejack.c` | baresip glue: hidraw fd, timers, SIP events, tone playback, config | yes |
 | `test/test_phone.c` | Unit tests for the core files | no |
+| `test/dtmfscan.c` | Runs the DTMF detector over a recording (`arecord -D hw:TigerJet,0 -f S16_LE -r 8000 -c 1`) | no |
 | `conf/config.rejack` | baresip config lines for Rejack | — |
 
 ## Status
-- State machine, tones, line-register decoding, E911 status check, line-down monitor: implemented, 158 unit checks passing.
+- State machine, tones, line-register decoding, E911 status check, line-down monitor, DTMF detector: implemented, 169 unit checks passing.
 - baresip glue: builds against baresip/libre **v4.12.0** in `../deps/`, loads in baresip (`run/` dev config).
+- Digits are decoded from the line audio (`src/dtmfdet.c`): the capture runs whenever no call is up and
+  closes before call audio or the emergency recording needs the device. The chip's decoder (`0x15`) is the
+  fallback (`rejack_dtmf_detect chip`, or if the capture can't open): it keeps the last digit and doesn't
+  always strobe "digit present", so a repeated key, or a call starting with the previous call's last digit,
+  is lost there.
 - Line control (`src/tjdev.c`, registers verified on hardware): hook `0x58` and DTMF `0x15` polled every 20 ms
   (hook debounced over 3 polls), ring `0x3D`, dial tone from the chip's generator (`0x34` bit 6;
   `rejack_dialtone sw` uses the baresip player instead). On start Rejack turns off the chip's automatic dial

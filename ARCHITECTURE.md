@@ -26,8 +26,8 @@ still missing. In the current setup everything runs on one Linux machine. That i
 
 | Function | Owner |
 |---|---|
-| Talk battery, ring voltage, hook detection, DTMF decoding, A/D conversion | magicJack |
-| Dial tone, digit collection, end of dialling (pause or `#`) | ReJack |
+| Talk battery, ring voltage, hook detection, A/D conversion | magicJack |
+| Dial tone, DTMF decoding (from the line audio), digit collection, end of dialling (pause or `#`) | ReJack |
 | Ring cadence, answer on off-hook, hang up on on-hook | ReJack |
 | Ringback and busy heard on the analog phone | ReJack |
 | 911 policy and fallback (announcement, recording, alerts), even when Asterisk or the network is down | ReJack |
@@ -54,14 +54,15 @@ Asterisk is the switch core. Mapped onto BORSCHT:
 | **H**ybrid (2-to-4 wire) | magicJack hardware |
 | **T**esting | `tools/tjprobe` (register-level probe); `tools/rejack` (status, live log, dashboard) |
 
-Unlike a central-office line card, ReJack also collects digits (the chip decodes them into reg `0x15`), supplies
+Unlike a central-office line card, ReJack also decodes and collects digits, supplies
 dial tone, ringback and busy, and owns the 911 fallback. Register details: [`docs/HARDWARE.md`](docs/HARDWARE.md) and [`RING.md`](RING.md).
 
 ## One call end to end: the analog phone dials 101
 
 1. The phone goes off-hook. The magicJack sets reg `0x58`; ReJack sees it within about 60 ms and turns on dial tone.
-2. Digits `1` `0` `1`: the chip decodes each into reg `0x15`. ReJack collects them and stops dial tone on the
-   first.
+2. Digits `1` `0` `1`: ReJack decodes the tones from the dongle's capture audio, collects them and stops dial
+   tone on the first. (The chip has a DTMF decoder too, reg `0x15`, but it misses a repeated key; it is the
+   fallback.)
 3. After a 4-second pause, or `#`, ReJack (extension 100) sends Asterisk a SIP INVITE for `101`.
 4. Asterisk looks `101` up in the dial plan, finds the softphone's current registration and rings it. It answers
    ReJack with `180 Ringing`, and ReJack plays ringback to the analog phone.
@@ -121,6 +122,7 @@ Register your address with the provider's E911 service before relying on this ph
 | VoIP stack | baresip / libre **v4.12.0** | ReJack is an application module; Ubuntu's baresip 1.0.0 has an incompatible module API |
 | Phone server | Asterisk 20 | ARI for integrations; packaged by the distribution |
 | Line state | Register polling every 20 ms, hook debounced over 3 polls | The HID input report's keypad field is for TigerJet's USB handsets, not the analog line |
+| Digits | DTMF decoded from the line audio (Goertzel) while no call is up; chip decoder as fallback | The chip's `0x15` keeps the last digit and its "present" strobe is unreliable, so repeated keys were lost |
 | Dial tone | The chip's tone generator; ReJack switches off the chip's automatic dial tone while running | ReJack decides when dial tone plays; after any stop the service hands the chip's automatic tone back (`tjprobe release`) |
 | Ring | Hardware ring generator keyed by ReJack, which owns the cadence | The generator has no cadence of its own |
 | Codec | G.711 μ-law, 8 kHz | Narrowband analog line, 8 kHz capture, native to the PSTN |

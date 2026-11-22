@@ -8,11 +8,16 @@ Newest first. Commit hashes refer to this repository.
 
 ## [Unreleased]: in progress
 
-**Outgoing digits with a VTech handset** (2026-11-21)
+**Outgoing digits with a VTech handset** (2026-11-21/22)
 - 🔄 Calls in worked but calls out failed: 101 arrived as `0`. A register trace (new `tjprobe trace`) showed
   that `0x15` bit 6, which Rejack used as "digit present", pulses for ~20 ms on some digits and never appears on
-  others; the low nibble changes on every digit. Rejack now takes a nibble change as a digit, and a bit-6 edge
-  only for the same key pressed twice. 4 new unit checks from the trace (162 total).
+  others; the low nibble changes on every digit. First fix: a nibble change is a digit.
+- ❌ Not enough: the nibble keeps the last digit, so a repeated key, or a call starting with the previous call's
+  last digit (101 after 101 → `01`), leaves no trace. `0x15` ignores writes; a full register watch found no
+  other key-press signal.
+- ✅ Rejack now decodes DTMF from the line audio (`src/dtmfdet.c`, Goertzel; 7 new unit checks, 169 total). On
+  a recording of the line (`test/dtmfscan`) it found 12 of 12 digits, `111002` dialled slowly and pre-dialled,
+  where the chip register gave `002` and `1002`. The chip decoder stays as the fallback.
 
 **Line monitor** (2026-11-21)
 - ✅ `tools/rejack`: one-shot status, `-v` live log (calls, state changes and errors highlighted, repeats
