@@ -1,0 +1,8 @@
+# /etc/udev/rules.d/99-magicjack.rules — installed by rejack/systemd/install.sh
+# HID control node for the audio group, as a stable name.
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="06e6", ATTRS{idProduct}=="c200", MODE="0660", GROUP="audio", SYMLINK+="magicjack-hid"
+# Line levels, on every plug-in (the card powers up at capture 8, playback 0, both 0..15 dB).
+# Capture 15 = phone -> network loud enough for voicemail's silence detection; playback 8 = network -> phone.
+SUBSYSTEM=="sound", KERNEL=="controlC*", ACTION=="add|change", ATTRS{idVendor}=="06e6", ATTRS{idProduct}=="c200", \
+  RUN+="/usr/bin/amixer -q -c %n cset name='Headset Capture Volume' 15", \
+  RUN+="/usr/bin/amixer -q -c %n cset name='PCM Playback Volume' 8"

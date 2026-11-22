@@ -162,14 +162,14 @@ Full derivation (magicJack and GVJack drivers, test logs) in [`RING.md`](../RING
 
 ---
 
-## udev Rule (for consistent device access)
+## udev Rule (device access and line levels)
 
-Add to `/etc/udev/rules.d/99-magicjack.rules`:
-```
-SUBSYSTEM=="hidraw", ATTRS{idVendor}=="06e6", ATTRS{idProduct}=="c200", \
-  MODE="0660", GROUP="audio", SYMLINK+="magicjack-hid"
-```
-This creates `/dev/magicjack-hid` as a stable symlink and grants access to users in the `audio` group without requiring root.
+[`rejack/systemd/99-magicjack.rules`](../rejack/systemd/99-magicjack.rules), installed to `/etc/udev/rules.d/` by
+`sudo rejack/systemd/install.sh`:
+- creates `/dev/magicjack-hid` as a stable symlink and grants access to the `audio` group, so no root is needed;
+- sets the line levels on every plug-in: `Headset Capture Volume` 15 and `PCM Playback Volume` 8 (the card powers
+  up at 8 and 0). At the power-up levels, speech from the phone was so quiet that voicemail recorded it as silence
+  and the echo test needed shouting (2026-11-22).
 
 ## Audio Test Results (2026-11-16, phone on-hook, line state unknown)
 

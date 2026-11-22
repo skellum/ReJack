@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # rejack/systemd/install.sh — install ReJack as a systemd service.  Run:  sudo rejack/systemd/install.sh
+# Also installs the udev rule (hidraw access, line levels).
 # Runs as the user who invoked sudo (override: REJACK_USER=name). Builds tools/tjprobe if missing.
 set -euo pipefail
 [ "$(id -u)" = 0 ] || { echo "run with sudo"; exit 1; }
@@ -12,6 +13,9 @@ id -nG "$USER_NAME" | grep -qw audio || echo "warning: $USER_NAME is not in the 
 if [ ! -x "$ROOT/tools/tjprobe" ]; then
 	sudo -u "$USER_NAME" gcc -O2 -Wall -o "$ROOT/tools/tjprobe" "$ROOT/tools/tjprobe.c"
 fi
+install -m 0644 "$ROOT/rejack/systemd/99-magicjack.rules" /etc/udev/rules.d/99-magicjack.rules
+udevadm control --reload
+udevadm trigger --action=change --subsystem-match=hidraw --subsystem-match=sound
 sed -e "s|@ROOT@|$ROOT|g" -e "s|@USER@|$USER_NAME|g" "$ROOT/rejack/systemd/rejack.service.in" \
 	> /etc/systemd/system/rejack.service
 systemctl daemon-reload
