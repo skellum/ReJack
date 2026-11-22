@@ -8,6 +8,12 @@ Newest first. Commit hashes refer to this repository.
 
 ## [Unreleased]: in progress
 
+**Line levels** (2026-11-22)
+- 🔄 The card powers up at capture 8 / playback 0 (0–15 dB): speech from the phone was so quiet that voicemail
+  saved it as silence and the 600 echo test needed shouting. Now capture 15, playback 8, set on every plug-in
+  by `rejack/systemd/99-magicjack.rules` (installed by `rejack/systemd/install.sh`). Unknown numbers now get the
+  intercept message as early media and a 404, so they no longer show as answered.
+
 **Outgoing digits with a VTech handset** (2026-11-21/22)
 - 🔄 Calls in worked but calls out failed: 101 arrived as `0`. A register trace (new `tjprobe trace`) showed
   that `0x15` bit 6, which Rejack used as "digit present", pulses for ~20 ms on some digits and never appears on
@@ -137,7 +143,7 @@ Newest first. Commit hashes refer to this repository.
 
 | Phase | Item | Notes |
 |---|---|---|
-| 2 | ⏳ Loopback listening test with the line active; re-check the capture bursts | Low priority |
+| 4 | ⏳ **Call quality**: crackle/pops on audio played to the analog phone | See below |
 | 3 | ⏳ Measure the ring voltage | Needs a meter on the tip/ring pair during a ring |
 | 4 | ⏳ Provider E911 checker script | After the provider is chosen |
 | 4 | ⏳ ALSA dsnoop so the emergency recording and call audio can share capture | Before bridging a contact into a 911 call |
@@ -154,5 +160,16 @@ Newest first. Commit hashes refer to this repository.
 | 6 | 💡 Multi-dongle Rejack (`rejack@.service`, per-port device names) | Needed for household phones |
 | 7 | 💡 Switchboard: Discord voice bridge (ext 700), OpenClaw agent calls / dial-the-agent (ext 800) | Spec in `INTEGRATIONS.md` |
 | 7 | 💡 Switchboard: Home Assistant/MQTT, doorbell, Telegram alerts | Proposed |
+
+**Call quality (backlog, 2026-11-22).** Crackle and pops on the network → phone direction, heard on Asterisk's
+prompts and on the 600 echo test. What is known:
+- Not the prompt codec: still there after installing the WAV prompts (only GSM ones were installed before).
+- No ALSA or baresip errors in the log during the calls; `tools/aloop` ran 0 xruns on 2026-11-16.
+- Levels changed the same day: playback 0 → 8 dB, capture 8 → 15 dB (udev rule). Crackle with playback lower
+  is not yet tried, so clipping isn't ruled out.
+- Earlier anomaly, never re-tested: with audio playing, the capture shows ~7.4 ms bursts near -1 dBFS (≈ 3.6 kHz)
+  at 50–450 ms intervals (`docs/HARDWARE.md`, audio test results).
+- Next: record a call on both ends (Asterisk `MixMonitor` and a baresip-side capture), and compare playback
+  0/4/8; check host/device clock drift (both USB endpoints have no feedback) and the baresip `aubuf` settings.
 
 **Still open:** the SIP trunk provider and its pricing; whether the CM18445 accepts the A921's 34 V line.
