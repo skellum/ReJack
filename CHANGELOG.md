@@ -8,6 +8,13 @@ Newest first. Commit hashes refer to this repository.
 
 ## [Unreleased]: in progress
 
+**Quickstart; mobile softphone decision** (2026-11-23, docs)
+- ✅ `docs/QUICKSTART.md`: Asterisk, Linphone and a SIP trunk provider, step by step. Parts 1–3 as run here; the
+  trunk part (portal checklist, PJSIP registration, ACL/NAT, dial plan, E911 order, test plan) is marked untested.
+- 💡 Decided: a cell softphone is a test client, not a reachable extension. Calls to ext 101 went to voicemail
+  whenever the app was in the background, and keeping it registered costs battery. People away from home are
+  reached on their real mobile number over the trunk.
+
 **Capture watchdog; vendor flash off** (2026-11-23)
 - 🔄 The always-on DTMF capture spun a core for 5 hours: the dongle was USB-reset at 03:01, and baresip's ALSA
   reader retries a failed read at once, forever. Rejack now reopens the capture if no audio arrives for 1 s
@@ -157,7 +164,9 @@ Newest first. Commit hashes refer to this repository.
 | 4 | ⏳ Echo canceller | None heard so far; revisit with a real trunk |
 | 5 | ⏳ Voicemail: test | **Current** |
 | 5 | ⏳ Exercise the 911 fallback against the test congestion | Sends real alerts if configured; plan it first |
-| 5 | ⏳ SIP trunk provider (real number, inbound/outbound, E911) | Confirm pricing at signup |
+| 5 | ⏳ SIP trunk provider (real number, inbound/outbound, E911) | Steps in `docs/QUICKSTART.md` part 4; then add a trunk step to `pbx/install.sh` |
+| 5 | 💡 Ring the cell's real number over the trunk when home doesn't answer | Replaces a background softphone |
+| 4 | 💡 Open the DTMF capture at off-hook only | The VTech waits before sending pre-dialled digits; measure the gap first |
 | 5+ | 💡 Voicemail notifications (ntfy/Telegram via externnotify) | Proposed |
 | 5+ | 💡 MWI stutter dial tone on the analog phone | Proposed |
 | post-MVP | 💡 Caller ID (Bell 202 FSK between rings, also sets the phone's clock) | Proposed |

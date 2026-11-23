@@ -24,8 +24,13 @@ ReJack's account (`rejack/run/accounts`, gitignored):
 ## Softphones (Linphone)
 Add a **third-party SIP account** (keep any linphone.org account; Linphone handles several): username = extension,
 password from `secrets.env`, domain = the server's LAN IP, transport UDP. If a password was changed, delete and
-re-add the account — Linphone caches a hash of the old one. On Android, exempt Linphone from battery optimisation
-or it drops the registration in the background (calls to it then fail with 404).
+re-add the account — Linphone caches a hash of the old one.
+
+**A cell softphone is a test client, not an extension calls rely on.** Phones suspend background apps, so it is
+reachable only while the app is open, and keeping it registered all day costs battery. Reaching someone away from
+home is the trunk's job: ring their real mobile number (see [`docs/QUICKSTART.md`](../docs/QUICKSTART.md)).
+
+Step-by-step setup including the trunk: [`docs/QUICKSTART.md`](../docs/QUICKSTART.md).
 
 ## Security
 SIP and RTP (UDP 5060, 10000–10200) are allowed only from localhost and the LAN (`acl-home` in `pjsip.conf.in`).

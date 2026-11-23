@@ -20,7 +20,7 @@ still missing. In the current setup everything runs on one Linux machine. That i
 | **magicJack A921** | The line card hardware: battery feed, ringing, hook sense, DTMF receiver, codec | USB dongle | None; ReJack sets its registers | USB: hidraw `/dev/magicjack-hid` (control), ALSA `hw:TigerJet,0` (audio) |
 | **ReJack** | Line controller plus phone logic: a **baresip** module (`rejack.so`) | systemd `rejack.service` (installed by `sudo rejack/systemd/install.sh`), as a normal user in the `audio` group; restarts on crash | `rejack/run/config` (generated from `config.in`), `rejack/run/accounts` (gitignored) | SIP `127.0.0.1:5070`, localhost only |
 | **Asterisk** | The switch: registrations, dial plan, call routing | System service (`asterisk` user), starts at boot | `/etc/asterisk/`, installed from [`pbx/`](pbx/) by `sudo pbx/install.sh` | SIP UDP 5060, RTP UDP 10000–10200; LAN and localhost only |
-| **Softphones** | Ordinary SIP phones (Linphone on a cell = ext 101, on a PC = ext 102) | Apps on your devices | In each app | Register with Asterisk over the LAN |
+| **Softphones** | Ordinary SIP phones (Linphone on a PC = ext 102; on a cell = ext 101, a test client only) | Apps on your devices | In each app | Register with Asterisk over the LAN |
 
 ## Who does what
 
@@ -128,6 +128,7 @@ Register your address with the provider's E911 service before relying on this ph
 | Ring | Hardware ring generator keyed by ReJack, which owns the cadence | The generator has no cadence of its own |
 | Codec | G.711 μ-law, 8 kHz | Narrowband analog line, 8 kHz capture, native to the PSTN |
 | 911 | Always attempt; notify on every 911; fallback = announce, record, alert | See [911 policy](#911-policy) |
+| Mobile phones | A cell softphone is a test client only; reach people away from home on their real mobile number over the trunk | Phones suspend background apps; keeping a SIP app registered all day costs battery for a line that is rarely used but must always work |
 
 ## Planned: one line per room
 

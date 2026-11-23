@@ -106,7 +106,7 @@ the full map: who owns what, a call end to end, and a BORSCHT breakdown.
 | [`RING.md`](RING.md) | Ring and line-control reference: register framing, the driver analysis, hardware results |
 | [`INTEGRATIONS.md`](INTEGRATIONS.md) | Spec for the integration layer: Discord voice bridge, phone agent |
 | [`CHANGELOG.md`](CHANGELOG.md) | What changed when, and the roadmap |
-| [`docs/`](docs/) | The teaching layer: [learning guide](docs/LEARNING_GUIDE.md), [hardware notebook](docs/HARDWARE.md), [project history](docs/PROJECT-HISTORY.md) |
+| [`docs/`](docs/) | The teaching layer: [learning guide](docs/LEARNING_GUIDE.md), [hardware notebook](docs/HARDWARE.md), [project history](docs/PROJECT-HISTORY.md), [quickstart: Asterisk, softphones, SIP trunk](docs/QUICKSTART.md) |
 | [`captures/`](captures/) | Raw diagnostic output (`lsusb -v`, sysfs, ALSA listings) the docs refer to |
 | [`rejack/`](rejack/) | The baresip module, unit tests, config, emergency notifier. Build and run: [`rejack/README.md`](rejack/README.md) |
 | [`pbx/`](pbx/) | Asterisk configuration and installer |
