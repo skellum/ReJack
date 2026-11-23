@@ -1,0 +1,27 @@
+; extensions_trunk.conf — calls in and out over the SIP trunk (rendered by pbx/install.sh; included from
+; extensions.conf). Without a trunk, install.sh installs empty [trunk-out] / [from-trunk] contexts instead.
+
+[globals]
+TRUNK_DID=@TRUNK_DID@
+
+; Inbound: the DID rings the house, then voicemail 100. The provider may address the call to the DID,
+; to the SIP user, or to "s", so all three land here.
+[from-trunk]
+exten => s,1,Goto(inbound,1)
+exten => @TRUNK_USER@,1,Goto(inbound,1)
+exten => _X.,1,Goto(inbound,1)
+exten => inbound,1,NoOp(Inbound ${CALLERID(all)})
+ same => n,Dial(PJSIP/100&PJSIP/102,25)      ; analog phone + desktop together; unregistered ones are skipped
+ same => n,VoiceMail(100@default,u)
+ same => n,Hangup()
+
+; Outbound (included from [rejack-phones], ahead of the intercept catch-all): North American numbers.
+[trunk-out]
+exten => _NXXNXXXXXX,1,Goto(1${EXTEN},1)     ; 10 digits -> 1 + 10
+exten => _1NXXNXXXXXX,1,Set(CALLERID(num)=${TRUNK_DID})
+ same => n,Dial(PJSIP/${EXTEN}@trunk,60)
+ same => n,Congestion()
+; 933: the provider's 911 test line, reads back the registered E911 address (not an emergency call)
+exten => 933,1,Set(CALLERID(num)=${TRUNK_DID})
+ same => n,Dial(PJSIP/933@trunk,60)
+ same => n,Congestion()

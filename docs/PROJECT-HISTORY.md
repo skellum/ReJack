@@ -132,8 +132,13 @@ Prices change; check at signup.
 - Line-down alert (2026-11-20): if the dongle is missing or keeps dropping off for 2 minutes, the emergency
   contacts are told; "restored" follows when it's back.
 - Voicemail on Asterisk: configured and installed, being tested.
-- Still to do: exercise the 911 fallback against the test congestion; a SIP trunk provider with inbound and
-  outbound routing and E911.
+- SIP trunk (2026-11-23): a registration-based trunk, set up by `pbx/install.sh` from `TRUNK_*` in `secrets.env`.
+  The first try registered but no call went through either way: the server behind the home internet's
+  carrier-grade NAT got replies to REGISTER and OPTIONS, yet none to 14 INVITEs, and the provider played busy to
+  callers. Probe packets showed the ISP was dropping INVITEs on port 5060 whatever their size, while the
+  provider's alternate port 5080 answered. With the trunk on 5080 (and its own local port, 5160), calls in and
+  out worked, with audio both ways and no NAT settings beyond symmetric RTP.
+- Still to do: E911 (register the address, 933, then route 911 out the trunk), and exercise the 911 fallback.
 
 ## Phase 6: packaging and more lines (not started)
 

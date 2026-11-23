@@ -8,6 +8,21 @@ Newest first. Commit hashes refer to this repository.
 
 ## [Unreleased]: in progress
 
+**SIP trunk: a real phone number** (2026-11-23)
+- ✅ `pbx/install.sh` sets up a registration-based trunk when `TRUNK_HOST` is set in `secrets.env`, rendered from
+  the new `pjsip_trunk.conf.in` and `extensions_trunk.conf.in`. Calls to the number ring the analog phone and the
+  desktop, then voicemail 100. 10 or 11 digits from the house go out with the number as caller ID, and 933 reaches
+  the provider's 911 test line. 911 stays test-only until E911 is confirmed.
+- ❌ First try: `Registered`, but no call went through. 14 INVITEs out got no reply (dead air), and calls in never
+  arrived (callers heard busy). The home internet is behind carrier-grade NAT. Probe packets showed the ISP drops
+  INVITEs on port 5060, whatever their size, while REGISTER and OPTIONS pass.
+- ✅ The trunk now uses the provider's alternate port (`TRUNK_PORT=5080`) and its own local transport (5160). Calls
+  in and out work, with audio both ways. The house phones are pinned to the 5060 transport. Endpoints are now
+  identified by IP first, so a caller ID like `100` can't match an extension. The `_X.` intercept moved to its
+  own `[intercept]` context, included after `[trunk-out]`.
+- 🔄 `docs/QUICKSTART.md` part 4 is now marked tested, with CGNAT and port-5060 notes, a test plan with results,
+  and new troubleshooting rows.
+
 **Quickstart; mobile softphone decision** (2026-11-23, docs)
 - ✅ `docs/QUICKSTART.md`: Asterisk, Linphone and a SIP trunk provider, step by step. Parts 1–3 as run here; the
   trunk part (portal checklist, PJSIP registration, ACL/NAT, dial plan, E911 order, test plan) is marked untested.
@@ -159,12 +174,13 @@ Newest first. Commit hashes refer to this repository.
 |---|---|---|
 | 4 | ⏳ **Call quality**: crackle/pops on audio played to the analog phone | See below |
 | 3 | ⏳ Measure the ring voltage | Needs a meter on the tip/ring pair during a ring |
-| 4 | ⏳ Provider E911 checker script | After the provider is chosen |
+| 4 | ⏳ Provider E911 checker script | Provider chosen; after the 933 test |
 | 4 | ⏳ ALSA dsnoop so the emergency recording and call audio can share capture | Before bridging a contact into a 911 call |
-| 4 | ⏳ Echo canceller | None heard so far; revisit with a real trunk |
+| 4 | ⏳ Echo canceller | None heard so far, including the first trunk calls |
 | 5 | ⏳ Voicemail: test | **Current** |
 | 5 | ⏳ Exercise the 911 fallback against the test congestion | Sends real alerts if configured; plan it first |
-| 5 | ⏳ SIP trunk provider (real number, inbound/outbound, E911) | Steps in `docs/QUICKSTART.md` part 4; then add a trunk step to `pbx/install.sh` |
+| 5 | ⏳ **E911 on the trunk**: register the address, call 933, then route 911 out the trunk | **Next**; `docs/QUICKSTART.md` 4d. Calls in/out done 2026-11-23 |
+| 5 | ⏳ Trunk: idle inbound (15+ min, CGNAT mapping), menu DTMF, voicemail on ring-out | Test plan in `docs/QUICKSTART.md` 4e |
 | 5 | 💡 Ring the cell's real number over the trunk when home doesn't answer | Replaces a background softphone |
 | 4 | 💡 Open the DTMF capture at off-hook only | The VTech waits before sending pre-dialled digits; measure the gap first |
 | 5+ | 💡 Voicemail notifications (ntfy/Telegram via externnotify) | Proposed |
@@ -188,4 +204,4 @@ prompts and on the 600 echo test. What is known:
 - Next: record a call on both ends (Asterisk `MixMonitor` and a baresip-side capture), and compare playback
   0/4/8; check host/device clock drift (both USB endpoints have no feedback) and the baresip `aubuf` settings.
 
-**Still open:** the SIP trunk provider and its pricing; whether the CM18445 accepts the A921's 34 V line.
+**Still open:** whether the CM18445 accepts the A921's 34 V line.

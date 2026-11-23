@@ -82,7 +82,7 @@ list.
 | Line-down alert to the emergency contacts | ✅ Unit tested, deployed · ⏳ test with a real unplug |
 | 911 fallback (announcement, recording, alerts) | ✅ Unit tested · ⏳ end-to-end run next |
 | Voicemail on Asterisk, message waiting in softphones | ⏳ Configured, being tested |
-| Real phone number through a SIP trunk provider, with E911 | ⏳ Next |
+| Real phone number through a SIP trunk provider | ✅ Calls in and out, behind carrier-grade NAT · ⏳ E911 next |
 | Caller ID (Bell 202 FSK), then hook flash, then message-waiting stutter dial tone | ⏳ After the trunk, in that order |
 
 ## How it works

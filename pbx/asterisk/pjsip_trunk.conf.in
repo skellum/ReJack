@@ -1,0 +1,53 @@
+; pjsip_trunk.conf — SIP trunk provider (rendered by pbx/install.sh from TRUNK_* in pbx/secrets.env;
+; included from pjsip.conf). Registration-based: the server dials out to the provider, so no port forward,
+; and it works behind carrier-grade NAT (CGNAT) where the house has no public IPv4 address of its own.
+; Own transport and ports (TRUNK_PORT at the provider, TRUNK_LOCAL_PORT here): some ISPs silently drop SIP
+; INVITEs on port 5060 while letting everything else through. Keeping the trunk off 5060 avoids that.
+
+[transport-trunk]
+type=transport
+protocol=udp
+bind=0.0.0.0:@TRUNK_LOCAL_PORT@
+
+[trunk]
+type=registration
+transport=transport-trunk
+outbound_auth=trunk
+server_uri=sip:@TRUNK_HOST@:@TRUNK_PORT@
+client_uri=sip:@TRUNK_USER@@@TRUNK_HOST@:@TRUNK_PORT@
+contact_user=@TRUNK_USER@        ; inbound calls arrive addressed to this user
+retry_interval=60
+forbidden_retry_interval=600     ; don't hammer the provider after a 403
+expiration=300
+
+[trunk]
+type=auth
+auth_type=userpass
+username=@TRUNK_USER@
+password=@TRUNK_PASS@
+
+[trunk]
+type=aor
+contact=sip:@TRUNK_HOST@:@TRUNK_PORT@
+qualify_frequency=25             ; OPTIONS every 25 s keeps the NAT mapping open for inbound calls
+
+[trunk]
+type=endpoint
+transport=transport-trunk
+context=from-trunk
+disallow=all
+allow=ulaw
+outbound_auth=trunk
+aors=trunk
+from_user=@TRUNK_USER@
+from_domain=@TRUNK_HOST@
+direct_media=no
+rtp_symmetric=yes
+force_rport=yes
+rewrite_contact=yes
+dtmf_mode=rfc4733
+
+[trunk]
+type=identify
+endpoint=trunk
+match=@TRUNK_HOST@               ; resolved when Asterisk loads

@@ -5,7 +5,7 @@
 [global]
 type=global
 user_agent=ReJack PBX
-endpoint_identifier_order=username,ip
+endpoint_identifier_order=ip,username   ; the trunk by IP first, so a caller ID like "100" can't match an extension
 
 [transport-udp]
 type=transport
@@ -17,10 +17,12 @@ type=acl
 deny=0.0.0.0/0.0.0.0
 permit=127.0.0.1/255.255.255.255
 permit=@LAN_CIDR@
+permit=@TRUNK_PERMIT@   ; the SIP trunk provider's server (localhost again when there is no trunk)
 
 ; ---- templates ----
 [endpoint-tpl](!)
 type=endpoint
+transport=transport-udp          ; house phones on 5060; the trunk has its own transport
 context=rejack-phones
 disallow=all
 allow=ulaw,alaw
@@ -73,3 +75,6 @@ username=102
 password=@PW_102@
 [102](aor-tpl)
 mailboxes=102@default
+
+; ---- SIP trunk (empty file when TRUNK_HOST is not set) ----
+#tryinclude pjsip_trunk.conf

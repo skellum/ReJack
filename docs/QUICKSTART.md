@@ -8,7 +8,7 @@ and a SIP trunk provider for a real phone number.
 | 1. Asterisk with extensions, voicemail and test numbers | ✅ Running (`pbx/`) |
 | 2. Softphones (Linphone) | ✅ Running, as test clients |
 | 3. The analog phone (ReJack) | ✅ Running; see [`rejack/README.md`](../rejack/README.md) |
-| 4. SIP trunk: phone number, outside calls, E911 | ⏳ **Not yet run on this setup.** The config below is standard PJSIP, untested here |
+| 4. SIP trunk: phone number, outside calls, E911 | ✅ Calls in and out working (`pbx/install.sh`); ⏳ E911 not yet tested |
 
 ```
  analog phone ── magicJack ── ReJack (ext 100) ──┐
@@ -69,9 +69,8 @@ localhost. Pick up: dial tone; dial 600; dial 102 to ring the desktop softphone.
 
 ## 4. SIP trunk provider
 
-> ⏳ **Not yet run on this setup.** The steps are what a registration-based trunk needs with Asterisk's PJSIP; the
-> repo will get a `pbx/install.sh` trunk step once they have been tested end to end. Names in `UPPER_CASE` are
-> yours to fill in.
+> ✅ **Run on this setup (2026-11-23)**: registration, calls in and out, behind carrier-grade NAT. ⏳ **E911 (4d) not
+> yet tested.** Names in `UPPER_CASE` are yours to fill in.
 
 ### 4a. In the provider's portal
 
@@ -98,99 +97,63 @@ localhost. Pick up: dial tone; dial 600; dial 102 to ring the desktop softphone.
 
 ### 4b. Asterisk: the trunk (PJSIP)
 
-Credentials go in `pbx/secrets.env` (gitignored), never in committed files:
+`pbx/install.sh` sets the trunk up when `TRUNK_HOST` is set in `pbx/secrets.env` (gitignored; leave it empty for
+no trunk). The credentials stay in that file, never in committed ones:
 
 ```
-TRUNK_HOST=pop.provider.example
+TRUNK_HOST=pop.provider.example      # the point of presence from 4a
 TRUNK_USER=sub-account-user
-TRUNK_PASS=long-random-password
+TRUNK_PASS='long-random-password'    # single quotes; avoid | & \ ; # and spaces
 TRUNK_DID=15551234567
+TRUNK_PORT=5080                      # the provider's SIP port: 5060 by default, see "Port 5060" below
 ```
 
-PJSIP sections for the trunk (rendered from those values):
+Then `sudo pbx/install.sh`. It renders two files from templates and adds the provider's server to the ACL:
 
-```
-[trunk]
-type=registration
-transport=transport-udp
-outbound_auth=trunk
-server_uri=sip:TRUNK_HOST
-client_uri=sip:TRUNK_USER@TRUNK_HOST
-contact_user=TRUNK_USER          ; inbound calls arrive addressed to this user
-retry_interval=60
-forbidden_retry_interval=600     ; don't hammer the provider after a 403
-expiration=300
-
-[trunk]
-type=auth
-auth_type=userpass
-username=TRUNK_USER
-password=TRUNK_PASS
-
-[trunk]
-type=aor
-contact=sip:TRUNK_HOST
-qualify_frequency=60
-
-[trunk]
-type=endpoint
-context=from-trunk
-disallow=all
-allow=ulaw
-outbound_auth=trunk
-aors=trunk
-from_user=TRUNK_USER
-from_domain=TRUNK_HOST
-direct_media=no
-rtp_symmetric=yes
-force_rport=yes
-rewrite_contact=yes
-dtmf_mode=rfc4733
-
-[trunk]
-type=identify
-endpoint=trunk
-match=TRUNK_HOST                 ; resolved when Asterisk loads; add the provider's published IP ranges if it uses several
-```
-
-**The ACL.** `acl-home` in `pbx/asterisk/pjsip.conf.in` denies everyone but localhost and the LAN, and that includes
-the provider. Add a `permit=` line for each of the provider's published signalling IP ranges (not `0.0.0.0/0`).
-
-**NAT (the server is behind your router).** Registration keeps a path open for signalling, so no port forward is
-needed. For audio, tell Asterisk what is local and what the public address is, on `[transport-udp]`:
-
-```
-local_net=LAN_CIDR
-external_media_address=YOUR_PUBLIC_IP_OR_DDNS_NAME
-external_signaling_address=YOUR_PUBLIC_IP_OR_DDNS_NAME
-```
-
-With a dynamic public IP, use a dynamic-DNS name. If calls connect but have one-way audio, NAT is the place to look
-first.
+| File | What |
+|---|---|
+| [`pjsip_trunk.conf.in`](../pbx/asterisk/pjsip_trunk.conf.in) | Its own UDP transport (local port `TRUNK_LOCAL_PORT`, 5160 by default), the registration, auth, endpoint (ulaw, RFC 4733 DTMF, symmetric RTP) and identify-by-IP |
+| [`extensions_trunk.conf.in`](../pbx/asterisk/extensions_trunk.conf.in) | `[from-trunk]` for calls in and `[trunk-out]` for calls out (4c) |
+| `pjsip.conf.in` | `permit=` for the provider's server in `acl-home`, which otherwise allows only localhost and the LAN |
 
 Check it: `sudo asterisk -rx "pjsip show registrations"` shows the trunk `Registered`.
+
+The ACL permits the one address `TRUNK_HOST` resolves to when you install. Calls arrive from the server you register
+to, so that is enough here. Rerun `install.sh` if the provider changes that address. A provider that sends calls from
+several servers needs a `permit=` for each of its published signalling ranges (never `0.0.0.0/0`).
+
+**NAT.** The server registers out to the provider, which keeps a path open through the router, so there is no port
+forward. The endpoint uses symmetric RTP, and an OPTIONS ping every 25 s keeps the NAT mapping open between calls.
+This also works behind **carrier-grade NAT (CGNAT)**, common with mobile and fixed-wireless home internet, where the
+house has no public IPv4 address. Behind CGNAT, dynamic DNS and `external_media_address` don't help: there is no
+address of your own to point them at, so leave them out. With an ordinary home router and a public IP, symmetric
+RTP is usually enough too. If you get one-way audio, set `local_net` and `external_media_address` on the trunk
+transport.
+
+**Port 5060.** Some ISPs silently drop SIP INVITEs on port 5060 and pass everything else, including the REGISTER
+and OPTIONS. The trunk then shows `Registered`, but calls out get no reply (dead air), and calls in never arrive
+(the provider plays busy). If that happens, set `TRUNK_PORT` to the provider's alternate SIP port (many offer
+5080). The trunk already has its own local port, 5160, so the house phones stay on 5060. A quick test is to compare
+the provider's answer to an INVITE on 5060 with one on the alternate port: with this problem, only the alternate
+port gets `100 Trying`.
 
 ### 4c. Asterisk: the dial plan
 
 Inbound: the DID rings the house and falls back to voicemail. Outbound: North American numbers go out the trunk with
-your DID as caller ID. Add to `pbx/asterisk/extensions.conf`; the outbound patterns go **inside `[rejack-phones]`,
-above the `_X.` catch-all**:
+your DID as caller ID. This is in [`extensions_trunk.conf.in`](../pbx/asterisk/extensions_trunk.conf.in), shown
+here in short. `[rejack-phones]` includes `[trunk-out]` and then the `[intercept]` catch-all, in that order. An
+include is searched after a context's own extensions, so 911 and the test numbers still win.
 
 ```
-[globals]
-TRUNK_DID=15551234567
-
-[from-trunk]
-exten => _X.,1,NoOp(Inbound ${CALLERID(all)} for ${EXTEN})
- same => n,Dial(PJSIP/100&PJSIP/102,25)      ; ring the analog phone and the desktop together
+[from-trunk]                                 ; the provider may address it to the DID, the SIP user or "s"
+exten => inbound,1,Dial(PJSIP/100&PJSIP/102,25)   ; analog phone + desktop; unregistered ones are skipped
  same => n,VoiceMail(100@default,u)
- same => n,Hangup()
 
-; in [rejack-phones], above "_X.":
+[trunk-out]
 exten => _NXXNXXXXXX,1,Goto(1${EXTEN},1)     ; 10 digits -> 1 + 10
 exten => _1NXXNXXXXXX,1,Set(CALLERID(num)=${TRUNK_DID})
  same => n,Dial(PJSIP/${EXTEN}@trunk,60)
- same => n,Congestion()
+exten => 933,1,...                           ; the provider's 911 test line (4d)
 ```
 
 "Ring my cell" when nobody answers at home: add `same => n,Dial(PJSIP/1MOBILENUMBER@trunk,25)` before the
@@ -201,8 +164,8 @@ voicemail step. That costs an outbound call per forward, and the cell's own voic
 This is deliberately the last step, and it changes what the analog phone does in an emergency.
 
 1. The E911 address is registered and confirmed in the portal (4a, step 6).
-2. If the provider offers a 911 test number (often **933**, which reads back the registered address), route it out
-   the trunk and call it.
+2. If the provider offers a 911 test number (often **933**, which reads back the registered address), call it. It's
+   already routed out the trunk in `[trunk-out]`.
 3. Only then replace the test 911 entries (`911`, `1911`, `9911`) in `extensions.conf` with a real route:
    `exten => 911,1,Set(CALLERID(num)=${TRUNK_DID})` / `same => n,Dial(PJSIP/911@trunk)`.
 4. Keep ReJack's fallback configured (`rejack_emergency_hook`): if 911 can't go through (internet down, trunk not
@@ -212,15 +175,15 @@ This is deliberately the last step, and it changes what the analog phone does in
 
 ### 4e. Test plan
 
-| Test | Expect |
-|---|---|
-| `pjsip show registrations` | Trunk `Registered` |
-| Call the DID from a mobile | Analog phone and desktop ring; both directions of audio |
-| Let it ring out | Voicemail for 100; `*97` plays the message |
-| Dial a mobile from the analog phone | It rings; caller ID shows the DID (and the registered name, once it has propagated) |
-| Call the DID from a mobile, watch the desktop softphone | Shows the mobile's number (and name, if CNAM lookup is on) |
-| Dial a menu (bank, pharmacy) and press keys | Digits are recognised (RFC 4733) |
-| 933, if offered | Reads back the registered address |
+| Test | Expect | Here |
+|---|---|---|
+| `pjsip show registrations` | Trunk `Registered` | ✅ |
+| Call the DID from a mobile | Analog phone and desktop ring; both directions of audio | ✅ |
+| Dial a mobile from the analog phone | It rings; caller ID shows the DID | ✅ |
+| Call in again after 15+ minutes idle | Still rings (the NAT mapping stayed open) | ⏳ |
+| Let it ring out | Voicemail for 100; `*97` plays the message | ⏳ |
+| Dial a menu (bank, pharmacy) and press keys | Digits are recognised (RFC 4733) | ⏳ |
+| 933, if offered | Reads back the registered address | ⏳ |
 
 ## Troubleshooting
 
@@ -229,7 +192,9 @@ This is deliberately the last step, and it changes what the analog phone does in
 | Softphone won't register | `LAN_CIDR` in `secrets.env`; the password (delete and re-add the account); `sudo asterisk -rvvv` while it retries |
 | Calls to an extension go straight to voicemail | It isn't registered: `pjsip show contacts`. A phone app in the background isn't registered |
 | Trunk `Rejected` / 403 | User name and password; is registration (not IP auth) set on the sub-account? |
-| Inbound calls never arrive | The ACL `permit` for the provider; the DID routed to the sub-account; `contact_user` |
-| One-way or no audio on trunk calls | NAT: `local_net`, `external_media_address`; RTP ports 10000–10200 |
+| Inbound calls never arrive (the caller hears busy) | The DID routed to the sub-account; the ACL `permit` for the provider; the ISP dropping INVITEs on 5060 (`TRUNK_PORT`, 4b) |
+| Calls out: dead air, then nothing | No reply to the INVITE: the ISP dropping INVITEs on 5060 (`TRUNK_PORT`, 4b). See it with `sudo asterisk -rx "pjsip set logger on"` |
+| "Cannot be completed as dialed" on a call out | The number as dialled isn't a valid North American number: ReJack's log shows the digits it heard (`journalctl -u rejack`) |
+| One-way or no audio on trunk calls | NAT: symmetric RTP on the provider's side (its NAT setting), then `local_net` / `external_media_address` (not behind CGNAT); RTP ports 10000–10200 |
 | Your voice too quiet on voicemail or the echo test | Line levels: `rejack/systemd/99-magicjack.rules` (capture 15, playback 8) |
 | Digits not recognised by menus | `dtmf_mode=rfc4733` on both sides |
