@@ -170,6 +170,8 @@ Full derivation (magicJack and GVJack drivers, test logs) in [`RING.md`](../RING
 - sets the line levels on every plug-in: `Headset Capture Volume` 15 and `PCM Playback Volume` 8 (the card powers
   up at 8 and 0). At the power-up levels, speech from the phone was so quiet that voicemail recorded it as silence
   and the echo test needed shouting (2026-11-22).
+- switches off the dongle's mass-storage interface (the 18 MB vendor flash). While it was bound, usb-storage
+  error handling reset the whole dongle three times in one night (2026-11-23), breaking the audio stream.
 
 ## Audio Test Results (2026-11-16, phone on-hook, line state unknown)
 

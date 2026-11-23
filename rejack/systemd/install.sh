@@ -15,7 +15,7 @@ if [ ! -x "$ROOT/tools/tjprobe" ]; then
 fi
 install -m 0644 "$ROOT/rejack/systemd/99-magicjack.rules" /etc/udev/rules.d/99-magicjack.rules
 udevadm control --reload
-udevadm trigger --action=change --subsystem-match=hidraw --subsystem-match=sound
+udevadm trigger --action=change --subsystem-match=hidraw --subsystem-match=sound --subsystem-match=usb
 sed -e "s|@ROOT@|$ROOT|g" -e "s|@USER@|$USER_NAME|g" "$ROOT/rejack/systemd/rejack.service.in" \
 	> /etc/systemd/system/rejack.service
 systemctl daemon-reload

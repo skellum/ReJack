@@ -43,6 +43,7 @@
  * Copyright (c) 2026 Skellum. SPDX-License-Identifier: MIT (see ../../LICENSE)
  */
 #include <signal.h>
+#include <stdatomic.h>
 #include <spawn.h>
 #include <stdlib.h>
 #include <string.h>
@@ -104,6 +105,9 @@ struct rejack {
 	struct mqueue   *dtmf_mq;
 	struct dtmfdet   dtmf;
 	uint64_t         dtmf_retry_at;  /* after a failed open, don't retry before this (ms) */
+	_Atomic uint64_t dtmf_frame_at;  /* last audio frame (ms), written by the read thread */
+	uint64_t         dtmf_opened_at;
+	unsigned         dtmf_stalls;    /* consecutive stalls: retry backs off 2 s, 4 s ... 64 s */
 	bool             dtmf_warned;
 
 	struct linemon lm;           /* line-down alert */
@@ -524,6 +528,9 @@ static void on_digit(char digit, const char *src)
 /* ---- DTMF from the line audio ------------------------------------------ */
 
 #define DTMF_RETRY_MS 2000
+/* baresip's ALSA reader retries a failed read at once, forever (it only recovers an overrun): a broken stream
+ * spins a core and delivers nothing. No frame for this long = close and reopen. */
+#define DTMF_STALL_MS 1000
 enum { DTMF_MQ_DIGIT, DTMF_MQ_ERROR };
 
 /* ALSA read thread: detector only, no state touched outside rj.dtmf. */
@@ -533,6 +540,7 @@ static void dtmf_read(struct auframe *af, void *arg)
 	size_t n;
 	(void)arg;
 
+	atomic_store(&rj.dtmf_frame_at, now_ms());
 	if (af->fmt != AUFMT_S16LE)
 		return;
 	n = dtmfdet_feed(&rj.dtmf, af->sampv, af->sampc, got, sizeof(got));
@@ -592,9 +600,28 @@ static void dtmf_sync(void)
 		dtmf_close();
 		return;
 	}
-	if (rj.dtmf_src || now_ms() < rj.dtmf_retry_at)
+	if (rj.dtmf_src) {
+		if (now_ms() - atomic_load(&rj.dtmf_frame_at) > DTMF_STALL_MS) {
+			unsigned shift = rj.dtmf_stalls < 5 ? rj.dtmf_stalls : 5;
+			uint64_t wait = (uint64_t)DTMF_RETRY_MS << shift;
+
+			warning("rejack: DTMF capture stalled (no audio for %d ms): chip decoder, reopen in %llu s\n",
+				DTMF_STALL_MS, (unsigned long long)(wait / 1000));
+			dtmf_close();
+			rj.dtmf_retry_at = now_ms() + wait;
+			rj.dtmf_stalls++;
+		}
+		else if (rj.dtmf_stalls && now_ms() - rj.dtmf_opened_at > 60000) {
+			info("rejack: DTMF capture running again\n");
+			rj.dtmf_stalls = 0;
+		}
+		return;
+	}
+	if (now_ms() < rj.dtmf_retry_at)
 		return;
 	dtmfdet_init(&rj.dtmf);
+	atomic_store(&rj.dtmf_frame_at, now_ms());
+	rj.dtmf_opened_at = now_ms();
 	err = ausrc_alloc(&rj.dtmf_src, baresip_ausrcl(), rj.audio_mod, &prm, rj.record_dev,
 			  dtmf_read, dtmf_error, NULL);
 	if (err) {

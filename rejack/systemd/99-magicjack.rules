@@ -6,3 +6,8 @@ SUBSYSTEM=="hidraw", ATTRS{idVendor}=="06e6", ATTRS{idProduct}=="c200", MODE="06
 SUBSYSTEM=="sound", KERNEL=="controlC*", ACTION=="add|change", ATTRS{idVendor}=="06e6", ATTRS{idProduct}=="c200", \
   RUN+="/usr/bin/amixer -q -c %n cset name='Headset Capture Volume' 15", \
   RUN+="/usr/bin/amixer -q -c %n cset name='PCM Playback Volume' 8"
+# The dongle's built-in flash (vendor installer, 18 MB, mass-storage interface 0) is never used. With it bound,
+# usb-storage error handling reset the whole device (2026-11-23, 3 resets in a night), which breaks the audio
+# stream. Deauthorize just that interface; hook, audio and HID are untouched.
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_interface", ATTRS{idVendor}=="06e6", ATTRS{idProduct}=="c200", \
+  ATTR{bInterfaceClass}=="08", ATTR{authorized}="0"

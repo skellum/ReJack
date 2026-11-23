@@ -8,6 +8,13 @@ Newest first. Commit hashes refer to this repository.
 
 ## [Unreleased]: in progress
 
+**Capture watchdog; vendor flash off** (2026-11-23)
+- 🔄 The always-on DTMF capture spun a core for 5 hours: the dongle was USB-reset at 03:01, and baresip's ALSA
+  reader retries a failed read at once, forever. Rejack now reopens the capture if no audio arrives for 1 s
+  (backing off 2 s → 64 s while it keeps failing; the chip decoder covers the gap).
+- 🔄 The resets (3 that night) followed the dongle's built-in flash drive re-appearing (`sdb`, 18 MB): the udev rule
+  now deauthorizes that mass-storage interface. Unused by Rejack; the vendor image is already saved.
+
 **Line levels** (2026-11-22)
 - 🔄 The card powers up at capture 8 / playback 0 (0–15 dB): speech from the phone was so quiet that voicemail
   saved it as silence and the 600 echo test needed shouting. Now capture 15, playback 8, set on every plug-in
