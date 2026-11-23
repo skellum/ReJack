@@ -83,7 +83,16 @@ localhost. Pick up: dial tone; dial 600; dial 102 to ring the desktop softphone.
 5. **Order a phone number (DID)** and route its inbound calls to that sub-account: `TRUNK_DID` (11 digits, `1NXXNXXXXXX`).
 6. **Register the E911 address for the DID** (street address, unit). An unregistered number can't send your address to
    the 911 center. Many providers charge a small monthly fee for this; it isn't optional for a home line.
-7. **Outbound caller ID:** set it to the DID on the sub-account, or in the dial plan (4c).
+7. **Caller ID.**
+   - **Outbound number:** send your own DID, set in the dial plan (4c) or as an override on the sub-account. Pick one
+     place; a sub-account override usually wins over what Asterisk sends. Under STIR/SHAKEN the provider can only
+     fully attest numbers you own, so any other number arrives less trusted and is more likely to be flagged as spam.
+   - **Outbound name:** not sent with the call. The called party's carrier looks your number up in a caller-name
+     (CNAM) database, so `CALLERID(name)` is ignored on calls to the phone network. Register a name for the DID in the
+     portal if the provider offers it (often a small fee; it can take days to weeks to reach other carriers).
+   - **Inbound number:** passed through; Asterisk has it in `${CALLERID(num)}` and softphones show it.
+   - **Inbound name:** turn on CNAM lookup for the DID if you want names (usually a small per-call charge); the name
+     then arrives with the call. The analog phone doesn't show caller ID yet (on the ReJack roadmap).
 8. **Limits:** turn off international calling unless you need it, and set a daily spending limit. A stolen SIP
    password is a bill; limits cap it.
 
@@ -208,7 +217,8 @@ This is deliberately the last step, and it changes what the analog phone does in
 | `pjsip show registrations` | Trunk `Registered` |
 | Call the DID from a mobile | Analog phone and desktop ring; both directions of audio |
 | Let it ring out | Voicemail for 100; `*97` plays the message |
-| Dial a mobile from the analog phone | It rings; caller ID shows the DID |
+| Dial a mobile from the analog phone | It rings; caller ID shows the DID (and the registered name, once it has propagated) |
+| Call the DID from a mobile, watch the desktop softphone | Shows the mobile's number (and name, if CNAM lookup is on) |
 | Dial a menu (bank, pharmacy) and press keys | Digits are recognised (RFC 4733) |
 | 933, if offered | Reads back the registered address |
 
