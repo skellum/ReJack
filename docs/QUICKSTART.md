@@ -192,7 +192,7 @@ This is deliberately the last step, and it changes what the analog phone does in
 | Let it ring out | Voicemail for 100; `*97` plays the message | ⏳ |
 | Dial a menu (bank, pharmacy) and press keys | Digits are recognised (RFC 4733) | ⏳ |
 | The provider's 911 test line (933 or a published number) | Reads back the caller ID and address; "911 enabled" | ✅ |
-| `dialplan show 911@emergency` | `Dial(PJSIP/911@trunk)` with the DID as caller ID | ⏳ |
+| `dialplan show 911@emergency` | `Dial(PJSIP/911@trunk)` with the DID as caller ID | ✅ |
 
 ## Troubleshooting
 
