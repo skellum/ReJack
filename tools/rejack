@@ -116,6 +116,9 @@ class Model:
 
         if msg.startswith("Started ") and "rejack" in msg.lower():
             self.started, self.state, self.state_ts, self.call, self.offhook = ts, "IDLE", ts, None, False
+            # A new process starts with a fresh line monitor: an earlier line-down without its line-up is over.
+            if self.alert and self.alert[0] == "down":
+                self.alert = ("up", "service restarted (no line-up from the previous run)", ts)
             self._event(ts, "state", "service started")
             return "state", msg
         if msg.startswith(("Stopping ", "Stopped ")) or "terminated by signal" in msg:

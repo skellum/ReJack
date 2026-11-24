@@ -43,6 +43,7 @@ Then clone the sources at tag v4.12.0 into `../ext/` (gitignored) and build them
 ```
 git clone --depth 1 --branch v4.12.0 https://github.com/baresip/re ../ext/re
 git clone --depth 1 --branch v4.12.0 https://github.com/baresip/baresip ../ext/baresip
+git -C ../ext/baresip apply "$PWD"/patches/*.patch   # see patches/ below
 PREFIX=$(cd .. && pwd)/deps      # run from rejack/
 cmake -S ../ext/re -B ../ext/re/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$PREFIX
 cmake --build ../ext/re/build -j && cmake --install ../ext/re/build
@@ -50,6 +51,12 @@ cmake -S ../ext/baresip -B ../ext/baresip/build -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_INSTALL_PREFIX=$PREFIX -DCMAKE_PREFIX_PATH=$PREFIX -DMODULES="g711;alsa;stdio"
 cmake --build ../ext/baresip/build -j && cmake --install ../ext/baresip/build
 ```
+
+**`patches/`** holds small fixes to baresip, applied before the build:
+- `baresip-alsa-error-backoff.patch`: when the device fails (dongle unplugged or USB-reset: `ENODEV`, `EBADFD`),
+  baresip's ALSA read and write loops retry at once, forever. On 2026-11-23 a playback thread left that way spun a
+  core for 20 minutes and logged ~100,000 errors a second. With the patch, the loops wait one frame (20 ms)
+  after an error, and playback logs once per run of errors.
 
 ### 2. Rejack
 ```

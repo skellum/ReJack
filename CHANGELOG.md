@@ -8,6 +8,18 @@ Newest first. Commit hashes refer to this repository.
 
 ## [Unreleased]: in progress
 
+**ALSA error spin; stale line-down in the status tool** (2026-11-23)
+- 🔄 The dongle dropped off USB 16 s after a call (`disabled by hub (EMI?)`, then it stayed gone until replugged).
+  A baresip playback thread was still open and retried its write to the missing device in a tight loop: a full core
+  for 20 minutes, with ~100,000 `alsa: write error` lines a second in the journal. The new
+  `rejack/patches/baresip-alsa-error-backoff.patch` makes baresip's ALSA read and write loops wait one frame after
+  an error, and playback logs once per run of errors. The patch is applied before the baresip build
+  (`rejack/README.md`). Which object kept the player open isn't known yet: no thread outlives a call in normal use.
+- 🔄 `tools/rejack`: a service restart clears a line-down alert whose line-up never came. The old process died
+  before its 30 s "stable" check, and the tool kept showing LINE DOWN with the dongle attached.
+- ⏳ The emergency contacts got the line-down alert but no line-up, because the restart lost the monitor's state.
+  Proposed: keep the line-monitor state across restarts.
+
 **SIP trunk: a real phone number** (2026-11-23)
 - ✅ `pbx/install.sh` sets up a registration-based trunk when `TRUNK_HOST` is set in `secrets.env`, rendered from
   the new `pjsip_trunk.conf.in` and `extensions_trunk.conf.in`. Calls to the number ring the analog phone and the

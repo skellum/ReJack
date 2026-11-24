@@ -1,0 +1,56 @@
+diff --git a/modules/alsa/alsa_play.c b/modules/alsa/alsa_play.c
+index ae052bb..1423975 100644
+--- a/modules/alsa/alsa_play.c
++++ b/modules/alsa/alsa_play.c
+@@ -59,6 +59,8 @@ static int write_thread(void *arg)
+ 	auframe_init(&af, st->prm.fmt, st->sampv, st->sampc, st->prm.srate,
+ 		     st->prm.ch);
+ 
++	bool failing = false;
++
+ 	while (re_atomic_rlx(&st->run)) {
+ 		const int samples = num_frames;
+ 		void *sampv;
+@@ -73,17 +75,21 @@ static int write_thread(void *arg)
+ 			snd_pcm_prepare(st->write);
+ 
+ 			n = snd_pcm_writei(st->write, sampv, samples);
+-			if (n < 0) {
+-				warning("alsa: write error: %s\n",
+-					snd_strerror((int) n));
+-			}
+ 		}
+-		else if (n < 0) {
+-			if (re_atomic_rlx(&st->run))
++
++		/* A failing device (unplugged: ENODEV, EBADFD) fails at once:
++		 * wait one frame and log once per error run, not in a tight loop. */
++		if (n < 0) {
++			if (!failing && re_atomic_rlx(&st->run))
+ 				warning("alsa: write error: %s\n",
+ 					snd_strerror((int) n));
++			failing = true;
++			sys_msleep(st->prm.ptime);
++			continue;
+ 		}
+-		else if (n != samples) {
++		failing = false;
++
++		if (n != samples) {
+ 			warning("alsa: write: wrote %d of %d samples\n",
+ 				(int) n, samples);
+ 		}
+diff --git a/modules/alsa/alsa_src.c b/modules/alsa/alsa_src.c
+index 698abdd..91309f3 100644
+--- a/modules/alsa/alsa_src.c
++++ b/modules/alsa/alsa_src.c
+@@ -74,6 +74,9 @@ static int read_thread(void *arg)
+ 			continue;
+ 		}
+ 		else if (n <= 0) {
++			/* A failing device returns at once: don't spin. */
++			if (n < 0)
++				sys_msleep(st->prm.ptime);
+ 			continue;
+ 		}
+ 
