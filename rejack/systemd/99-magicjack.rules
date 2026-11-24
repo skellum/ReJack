@@ -1,6 +1,9 @@
 # /etc/udev/rules.d/99-magicjack.rules — installed by rejack/systemd/install.sh
 # HID control node for the audio group, as a stable name.
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="06e6", ATTRS{idProduct}=="c200", MODE="0660", GROUP="audio", SYMLINK+="magicjack-hid"
+# Desktop sound servers keep their hands off the phone line: PulseAudio honours PULSE_IGNORE, PipeWire's ACP
+# ACP_IGNORE. (A PulseAudio running for another account held the card open, which also blocks driver reloads.)
+SUBSYSTEM=="sound", ATTRS{idVendor}=="06e6", ATTRS{idProduct}=="c200", ENV{PULSE_IGNORE}="1", ENV{ACP_IGNORE}="1"
 # Line levels, on every plug-in (the card powers up at capture 8, playback 0, both 0..15 dB).
 # Capture 15 = phone -> network loud enough for voicemail's silence detection; playback 8 = network -> phone.
 SUBSYSTEM=="sound", KERNEL=="controlC*", ACTION=="add|change", ATTRS{idVendor}=="06e6", ATTRS{idProduct}=="c200", \

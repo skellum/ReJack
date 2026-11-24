@@ -8,6 +8,19 @@ Newest first. Commit hashes refer to this repository.
 
 ## [Unreleased]: in progress
 
+**Call quality: crackle found and fixed** (2026-11-24)
+- ✅ The crackle and pops toward the analog phone were lost USB packets: 2–7% of them, more with louder audio,
+  with the dongle on an extension cable and on the same USB controller as a Wi-Fi adapter. Plugged directly into a
+  rear port on its own controller: 0 errors, and a clean echo test. Measurements and the method in
+  `docs/HARDWARE.md` ("USB link quality").
+- ❌ Ruled out: playback gain, the vendor codec init, host clock drift, the kernel's generic implicit feedback.
+- 🔄 udev rule: desktop sound servers ignore the dongle (`PULSE_IGNORE`, `ACP_IGNORE`).
+
+**Single-program build; software ATA plan** (2026-11-24)
+- 💡 `ARCHITECTURE.md`: ReJack as a software ATA, standalone on a provider account or behind any PBX.
+- ✅ baresip can be built with ReJack, its modules and libre compiled in: one program that needs only system
+  libraries (`rejack/README.md`, step 3). It passed live calls in both directions, and now runs the line.
+
 **ALSA error spin; stale line-down in the status tool** (2026-11-23)
 - 🔄 The dongle dropped off USB 16 s after a call (`disabled by hub (EMI?)`, then it stayed gone until replugged).
   A baresip playback thread was still open and retried its write to the missing device in a tight loop: a full core
@@ -184,7 +197,7 @@ Newest first. Commit hashes refer to this repository.
 
 | Phase | Item | Notes |
 |---|---|---|
-| 4 | ⏳ **Call quality**: crackle/pops on audio played to the analog phone | See below |
+| 4 | ✅ **Call quality**: crackle/pops on audio played to the analog phone | Fixed 2026-11-24: lost USB packets (extension cable, shared controller) |
 | 3 | ⏳ Measure the ring voltage | Needs a meter on the tip/ring pair during a ring |
 | 4 | ⏳ Provider E911 checker script | Provider chosen; after the 933 test |
 | 4 | ⏳ ALSA dsnoop so the emergency recording and call audio can share capture | Before bridging a contact into a 911 call |
@@ -199,13 +212,13 @@ Newest first. Commit hashes refer to this repository.
 | 5+ | 💡 MWI stutter dial tone on the analog phone | Proposed |
 | post-MVP | 💡 Caller ID (Bell 202 FSK between rings, also sets the phone's clock) | Proposed |
 | post-MVP | 💡 Hook flash (call waiting, transfer) | Proposed |
-| 6 | ⏳ Packaging (udev + systemd + config as an installable unit) | Pieces exist; not packaged yet |
+| 6 | 🔄 Packaging (udev + systemd + config as an installable unit) | Single program + packaging in a separate repo (rejack-solo); running the line since 2026-11-24 |
 | 6 | 💡 One line per room: VTech CM18445 + 4 dongles, one extension each | Compatibility test on one line first; see `ARCHITECTURE.md` |
 | 6 | 💡 Multi-dongle Rejack (`rejack@.service`, per-port device names) | Needed for household phones |
 | 7 | 💡 Switchboard: Discord voice bridge (ext 700), OpenClaw agent calls / dial-the-agent (ext 800) | Spec in `INTEGRATIONS.md` |
 | 7 | 💡 Switchboard: Home Assistant/MQTT, doorbell, Telegram alerts | Proposed |
 
-**Call quality (backlog, 2026-11-22).** Crackle and pops on the network → phone direction, heard on Asterisk's
+**Call quality (backlog, 2026-11-22; solved 2026-11-24, see the entry at the top).** Crackle and pops on the network → phone direction, heard on Asterisk's
 prompts and on the 600 echo test. What is known:
 - Not the prompt codec: still there after installing the WAV prompts (only GSM ones were installed before).
 - No ALSA or baresip errors in the log during the calls; `tools/aloop` ran 0 xruns on 2026-11-16.

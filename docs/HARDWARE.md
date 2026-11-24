@@ -17,7 +17,9 @@ Use this document to restore context in future sessions without repeating discov
 | Serial number | A921XXXXXXXXXX (masked) |
 | dmesg product string | "USB Internet Phone by TigerJet" |
 
-**Critical**: device fails to enumerate on USB 1.1 (uhci_hcd) ports. Must use a USB 2.0 (ehci-pci) port.
+**Critical**: device fails to enumerate on USB 1.1 (uhci_hcd) ports. Must use a USB 2.0 port (EHCI or xHCI),
+**plugged in directly**: a marginal cable or extension cost 2–7% of the audio packets (see
+[USB link quality](#usb-link-quality-2026-11-24)).
 
 ---
 
@@ -172,6 +174,8 @@ Full derivation (magicJack and GVJack drivers, test logs) in [`RING.md`](../RING
   and the echo test needed shouting (2026-11-22).
 - switches off the dongle's mass-storage interface (the 18 MB vendor flash). While it was bound, usb-storage
   error handling reset the whole dongle three times in one night (2026-11-23), breaking the audio stream.
+- tells desktop sound servers to leave the card alone (`PULSE_IGNORE`, `ACP_IGNORE`). A PulseAudio running for
+  another account held the card's control device open (2026-11-24).
 
 ## Audio Test Results (2026-11-16, phone on-hook, line state unknown)
 
@@ -190,6 +194,36 @@ Full derivation (magicJack and GVJack drivers, test logs) in [`RING.md`](../RING
   floor. Rejack needs an echo canceller / gain margin on the line path (baresip has AEC modules).
 - SCHED_FIFO denied for the normal user — grant via `/etc/security/limits.d` rtprio for the audio group
   or a systemd `LimitRTPRIO=` when packaging.
+
+## USB link quality (2026-11-24)
+
+The crackle and pops heard on the analog phone (network → phone direction only) were **lost USB packets**, not
+gain, codec or VoIP problems.
+
+- **Symptom:** a steady 1 kHz tone played straight to `hw:TigerJet,0` with `aplay` (no baresip, Asterisk or
+  network) came out broken up "like Morse code" in the earpiece. At 16 kHz it sounded twice as fast.
+- **Capture rate looked wrong but wandered:** timing a long capture against the host clock gave −500 to −4000 ppm
+  from run to run. A real clock error would repeat; this was missing packets.
+- **usbmon** on the dongle's bus, 10 s per run, capture and playback running together. Playback (isochronous OUT)
+  can't report errors to the host, so the capture endpoint's errors stand in for both directions:
+
+| Setup | Playing silence | Tone −30 dBFS | Tone −12 dBFS |
+|---|---|---|---|
+| EHCI port shared with a USB Wi-Fi adapter, through a USB extension cable | 1.91% | 2.48% | **7.27%** |
+| Rear port on its own xHCI controller, plugged in directly | 0.00% | 0.00% | 0.00% |
+| Same rear port, through the same extension | — | — | **does not enumerate** (`descriptor read/64, error -71`) |
+
+  The failures are `-71` (`EPROTO`) with zero-length packets: single 1 ms packets lost at irregular intervals. Every
+  lost playback packet is a 1 ms gap on the line, which sounds like a T1 trunk taking errors. More line drive (a
+  louder tone) meant more errors, so the link was close to failing and the dongle's own load pushed it over.
+- **Fix:** no extension cable; the dongle on a port with no other busy device on its controller. After the move the
+  capture rate measures 8001 Hz (within the method's noise) and calls are clean.
+- Ruled out along the way: playback gain (the VTech's earpiece volume made no difference), the vendor driver's
+  codec init (`tjprobe init580`, no change), host clock drift (host side delivers 8000.5 Hz), and URB scheduling
+  (the 5-packet URBs every 125 ms are aplay's period boundaries). The kernel's generic `implicit_fb=1` does not
+  apply to this device: both endpoints are sync type NONE.
+- **Check a setup:** with ReJack stopped, run usbmon on the dongle's bus while playing a tone and recording; count
+  capture completions with status `-71`. Zero is the target.
 
 ## Board (component side photographed 2026-11-16; photo in `images/board/`, not committed)
 
