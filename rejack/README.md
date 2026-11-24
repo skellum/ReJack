@@ -84,7 +84,7 @@ cmake -S ext/baresip -B ext/baresip/build-static -DCMAKE_BUILD_TYPE=Release -DST
       -DMODULES="g711;alsa;account" -DAPP_MODULES_DIR=$PWD -DAPP_MODULES=rejack
 cmake --build ext/baresip/build-static -j    # -> ext/baresip/build-static/baresip
 ```
-The same config works; `module` lines name the compiled-in modules. Not yet tested on a live call.
+The same config works; `module` lines name the compiled-in modules. Live-tested 2026-11-24: calls in and out.
 
 ## Run (development)
 ```
