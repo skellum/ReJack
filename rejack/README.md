@@ -118,6 +118,7 @@ tools/rejack                 # one-shot status: service, dongle, SIP, line state
 tools/rejack -v              # follow every log line; calls, state changes and errors highlighted, repeats folded
 tools/rejack --visual        # top-style dashboard (-V); keys: q quit, v all lines/events, p pause, c clear errors
 tools/rejack --since "2026-11-20 08:00"      # widen the window (default: today)
+tools/rejack --unit line1                     # which service (default: the running one, rejack@<line> or rejack)
 ```
 Needs read access to the journal (`adm` or `systemd-journal` group).
 

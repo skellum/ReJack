@@ -4,7 +4,8 @@
     rejack                  one-shot status: service, dongle, SIP, line, today's calls and errors
     rejack -v               follow every log line, with calls, state changes and errors highlighted
     rejack --visual  (-V)   top-style live dashboard   keys: q quit  v all lines/events  p pause  c clear errors
-    options: --since "2026-11-20 08:00" (default: today)   --unit rejack.service
+    options: --since "2026-11-20 08:00" (default: today)
+             --unit line1 | rejack@line1.service | rejack.service   (default: the ReJack service that is running)
 
 Read-only. It reads the service journal (journalctl), sysfs and systemctl, and never opens the dongle:
 a second reader of the chip's registers scrambles ReJack's own reads.
@@ -224,6 +225,25 @@ def read(path):
         return ""
 
 
+def pick_unit(arg):
+    """The systemd unit to watch. --unit as given ("line1" is short for rejack@line1.service); otherwise the
+    ReJack service that is running: a packaged line (rejack@<line>) or the development setup (rejack.service)."""
+    if arg:
+        if arg.endswith(".service"):
+            return arg
+        return arg + ".service" if arg.startswith("rejack") else f"rejack@{arg}.service"
+    out = sh("systemctl", "list-units", "--all", "--plain", "--no-legend", "rejack@*.service", "rejack.service")
+    units = [(f[0], f[2]) for f in (l.split() for l in out.splitlines()) if len(f) > 2]
+    units.sort(key=lambda u: not u[0].startswith("rejack@"))       # packaged lines first
+    active = [u for u, state in units if state == "active"]
+    if len(active) > 1:
+        print(f"rejack: several lines running ({', '.join(active)}); showing {active[0]} (choose with --unit)",
+              file=sys.stderr)
+    if active:
+        return active[0]
+    return units[0][0] if units else "rejack.service"
+
+
 def service(unit):
     out = sh("systemctl", "show", unit, "-p", "ActiveState,SubState,MainPID,ActiveEnterTimestampMonotonic,NRestarts")
     d = dict(l.split("=", 1) for l in out.splitlines() if "=" in l)
@@ -301,7 +321,8 @@ def status_lines(model, unit, color=lambda s, k: s):
     ok = lambda b: color("●", "ok" if b else "bad")
     out = []
     up = f"up {fmt_dur(s['up'])}" if s["up"] else ""
-    out.append(f"Service   {ok(s['active'] == 'active')} {s['active']} ({s['sub']})  pid {s['pid']}  {up}"
+    out.append(f"Service   {ok(s['active'] == 'active')} {unit.removesuffix('.service')}  {s['active']} ({s['sub']})"
+               f"  pid {s['pid']}  {up}"
                f"  restarts {s['restarts']}      Asterisk {ok(ast == 'active')} {ast}")
     if d:
         sp = d["speed"] + "M" if d["speed"] else "?"
@@ -521,8 +542,10 @@ def main():
     ap.add_argument("-v", "--verbose", action="store_true", help="follow every log line")
     ap.add_argument("-V", "--visual", action="store_true", help="top-style live dashboard")
     ap.add_argument("--since", default=None, help='journal start, e.g. "2026-11-20 08:00" (default: today)')
-    ap.add_argument("--unit", default="rejack.service")
+    ap.add_argument("--unit", default=None,
+                    help='systemd unit or line name, e.g. line1 (default: the ReJack service that is running)')
     args = ap.parse_args()
+    args.unit = pick_unit(args.unit)
     args.since_given = args.since is not None
     if not args.since:
         args.since = "today"
