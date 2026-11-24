@@ -74,6 +74,18 @@ cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug \
 cmake --build build-asan --target test_phone && build-asan/test_phone
 ```
 
+### 3. Single program (optional, experimental)
+baresip can compile its modules, ReJack included, into the `baresip` program itself, with libre linked
+statically too. The result needs only the system's ALSA, OpenSSL and zlib at runtime; `module_path` is not used.
+Run from the repo root, after step 1:
+```
+cmake -S ext/baresip -B ext/baresip/build-static -DCMAKE_BUILD_TYPE=Release -DSTATIC=ON \
+      -DCMAKE_PREFIX_PATH=$PWD/deps -DRE_LIBRARY=$PWD/deps/lib/libre.a \
+      -DMODULES="g711;alsa;account" -DAPP_MODULES_DIR=$PWD -DAPP_MODULES=rejack
+cmake --build ext/baresip/build-static -j    # -> ext/baresip/build-static/baresip
+```
+The same config works; `module` lines name the compiled-in modules. Not yet tested on a live call.
+
 ## Run (development)
 ```
 rejack/run/start.sh            # baresip + Rejack with config, alerts and recordings under rejack/run/

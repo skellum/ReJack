@@ -5,6 +5,20 @@ set(CMAKE_C_STANDARD 11)
 add_compile_definitions(_DEFAULT_SOURCE)
 add_compile_options(-Wall -Wextra)
 
+# --- Built by baresip's own CMake as an app module ----------------------------------
+# baresip ... -DAPP_MODULES_DIR=<repo root> -DAPP_MODULES=rejack [-DSTATIC=ON]
+# With STATIC, ReJack is compiled into the baresip program (one binary, no rejack.so).
+if(DEFINED APP_MODULES_DIR)
+  set(REJACK_SRCS src/rejack.c src/phone.c src/tones.c src/tjdev.c src/e911.c src/linemon.c src/dtmfdet.c)
+  if(STATIC)
+    add_library(rejack OBJECT ${REJACK_SRCS})
+  else()
+    add_library(rejack MODULE ${REJACK_SRCS})
+  endif()
+  target_link_libraries(rejack PRIVATE m)
+  return()
+endif()
+
 # --- Core logic: no baresip dependency, always built and tested ------------------
 add_library(rejack_core STATIC src/phone.c src/tones.c src/tjdev.c src/e911.c src/linemon.c src/dtmfdet.c)
 set_target_properties(rejack_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
