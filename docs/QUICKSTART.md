@@ -8,7 +8,7 @@ and a SIP trunk provider for a real phone number.
 | 1. Asterisk with extensions, voicemail and test numbers | ✅ Running (`pbx/`) |
 | 2. Softphones (Linphone) | ✅ Running, as test clients |
 | 3. The analog phone (ReJack) | ✅ Running; see [`rejack/README.md`](../rejack/README.md) |
-| 4. SIP trunk: phone number, outside calls, E911 | ✅ Calls in and out working (`pbx/install.sh`); ⏳ E911 not yet tested |
+| 4. SIP trunk: phone number, outside calls, E911 | ✅ Calls in and out working (`pbx/install.sh`); ✅ E911 address confirmed by the provider's test line (2026-11-24) |
 
 ```
  analog phone ── magicJack ── ReJack (ext 100) ──┐
@@ -41,7 +41,7 @@ Check it: `sudo asterisk -rx "pjsip show endpoints"` lists 100, 101 and 102.
 | `*98` | Any mailbox, with its PIN |
 | 600 | Echo test: you hear yourself, so it tests both audio directions |
 | 601 | "Hello world", then reads back your extension |
-| 911 | **Test only** until part 4: congestion, so ReJack's 911 fallback runs |
+| 911 | Without a trunk: **test only**, congestion, so ReJack's 911 fallback runs. With a trunk: a real 911 call (4d) |
 | anything else | "Cannot complete as dialed", then 404 |
 
 ## 2. Softphones (Linphone)
@@ -69,8 +69,8 @@ localhost. Pick up: dial tone; dial 600; dial 102 to ring the desktop softphone.
 
 ## 4. SIP trunk provider
 
-> ✅ **Run on this setup (2026-11-23)**: registration, calls in and out, behind carrier-grade NAT. ⏳ **E911 (4d) not
-> yet tested.** Names in `UPPER_CASE` are yours to fill in.
+> ✅ **Run on this setup (2026-11-23)**: registration, calls in and out, behind carrier-grade NAT. ✅ **E911 address
+> confirmed by the provider's test line (2026-11-24).** Names in `UPPER_CASE` are yours to fill in.
 
 ### 4a. In the provider's portal
 
@@ -153,7 +153,12 @@ exten => inbound,1,Dial(PJSIP/100&PJSIP/102,25)   ; analog phone + desktop; unre
 exten => _NXXNXXXXXX,1,Goto(1${EXTEN},1)     ; 10 digits -> 1 + 10
 exten => _1NXXNXXXXXX,1,Set(CALLERID(num)=${TRUNK_DID})
  same => n,Dial(PJSIP/${EXTEN}@trunk,60)
-exten => 933,1,...                           ; the provider's 911 test line (4d)
+exten => 933,1,...                           ; a 911 test line on some providers (4d)
+
+[emergency]                                  ; 911 / 1911 / 9911 from the house (4d)
+exten => 911,1,Set(CALLERID(num)=${TRUNK_DID})
+ same => n,Dial(PJSIP/911@trunk)
+ same => n,Congestion(5)                     ; failed: ReJack's fallback runs
 ```
 
 "Ring my cell" when nobody answers at home: add `same => n,Dial(PJSIP/1MOBILENUMBER@trunk,25)` before the
@@ -164,10 +169,13 @@ voicemail step. That costs an outbound call per forward, and the cell's own voic
 This is deliberately the last step, and it changes what the analog phone does in an emergency.
 
 1. The E911 address is registered and confirmed in the portal (4a, step 6).
-2. If the provider offers a 911 test number (often **933**, which reads back the registered address), call it. It's
-   already routed out the trunk in `[trunk-out]`.
-3. Only then replace the test 911 entries (`911`, `1911`, `9911`) in `extensions.conf` with a real route:
-   `exten => 911,1,Set(CALLERID(num)=${TRUNK_DID})` / `same => n,Dial(PJSIP/911@trunk)`.
+2. Call the provider's 911 test line from the analog phone. Some use **933**; others publish an ordinary number
+   (look in the E911 section of the portal). It should read back the caller ID and the registered address and
+   confirm that 911 is enabled. 933 is routed out the trunk in `[trunk-out]`; an ordinary number goes out like any
+   other call. Here 933 got an instant 503 and the provider's own test number worked.
+3. With a trunk, `pbx/install.sh` routes 911, 1911 and 9911 to `[emergency]`: out the trunk as `911` with the DID
+   as caller ID, no ring timeout, and congestion if it fails. Without a trunk, `[emergency]` is the test congestion.
+   **Don't test it by dialling 911.** Check the route with `asterisk -rx "dialplan show 911@emergency"`.
 4. Keep ReJack's fallback configured (`rejack_emergency_hook`): if 911 can't go through (internet down, trunk not
    registered), the analog phone says so and the emergency contacts are alerted. See [`ARCHITECTURE.md`](../ARCHITECTURE.md#911-policy).
 
@@ -183,7 +191,8 @@ This is deliberately the last step, and it changes what the analog phone does in
 | Call in again after 15+ minutes idle | Still rings (the NAT mapping stayed open) | ⏳ |
 | Let it ring out | Voicemail for 100; `*97` plays the message | ⏳ |
 | Dial a menu (bank, pharmacy) and press keys | Digits are recognised (RFC 4733) | ⏳ |
-| 933, if offered | Reads back the registered address | ⏳ |
+| The provider's 911 test line (933 or a published number) | Reads back the caller ID and address; "911 enabled" | ✅ |
+| `dialplan show 911@emergency` | `Dial(PJSIP/911@trunk)` with the DID as caller ID | ⏳ |
 
 ## Troubleshooting
 

@@ -21,7 +21,18 @@ exten => _NXXNXXXXXX,1,Goto(1${EXTEN},1)     ; 10 digits -> 1 + 10
 exten => _1NXXNXXXXXX,1,Set(CALLERID(num)=${TRUNK_DID})
  same => n,Dial(PJSIP/${EXTEN}@trunk,60)
  same => n,Congestion()
-; 933: the provider's 911 test line, reads back the registered E911 address (not an emergency call)
+; 933: a 911 test line on some providers, reads back the registered E911 address (not an emergency call).
+; Others publish an ordinary test number instead; that one goes out as a normal call above.
 exten => 933,1,Set(CALLERID(num)=${TRUNK_DID})
  same => n,Dial(PJSIP/933@trunk,60)
  same => n,Congestion()
+
+; 911 (reached from 911 / 1911 / 9911 in [rejack-phones]): a REAL emergency call. Only route it here once the
+; E911 address is registered and the provider's test line has read it back (docs/QUICKSTART.md 4d).
+; No Dial timeout. If the trunk is down or the call fails, congestion makes ReJack's fallback run.
+[emergency]
+exten => 911,1,NoOp(EMERGENCY 911 from ${CALLERID(num)})
+ same => n,Set(CALLERID(num)=${TRUNK_DID})
+ same => n,Dial(PJSIP/911@trunk)
+ same => n,NoOp(911 DIALSTATUS=${DIALSTATUS})
+ same => n,Congestion(5)

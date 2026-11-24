@@ -8,6 +8,14 @@ Newest first. Commit hashes refer to this repository.
 
 ## [Unreleased]: in progress
 
+**E911 confirmed; 911 routed out the trunk** (2026-11-24)
+- ✅ The provider's 911 test line, called from the analog phone over the trunk, read back the caller ID, passed
+  the test and said 911 is enabled for the number. 933 had given an instant 503 on this provider; its own
+  published test number is the one that works.
+- 🔄 911, 1911 and 9911 now go to a new `[emergency]` context, rendered by `pbx/install.sh`. With a trunk, it's a
+  real 911 call: out the trunk with the DID as caller ID, no ring timeout, and congestion if it fails, so ReJack's
+  fallback (announcement, recording, alerts) still runs. Without a trunk it stays the test congestion.
+
 **Call quality: crackle found and fixed** (2026-11-24)
 - ✅ The crackle and pops toward the analog phone were lost USB packets: 2–7% of them, more with louder audio,
   with the dongle on an extension cable and on the same USB controller as a Wi-Fi adapter. Plugged directly into a
@@ -199,12 +207,12 @@ Newest first. Commit hashes refer to this repository.
 |---|---|---|
 | 4 | ✅ **Call quality**: crackle/pops on audio played to the analog phone | Fixed 2026-11-24: lost USB packets (extension cable, shared controller) |
 | 3 | ⏳ Measure the ring voltage | Needs a meter on the tip/ring pair during a ring |
-| 4 | ⏳ Provider E911 checker script | Provider chosen; after the 933 test |
+| 4 | ⏳ Provider E911 checker script | Provider chosen; E911 confirmed 2026-11-24 |
 | 4 | ⏳ ALSA dsnoop so the emergency recording and call audio can share capture | Before bridging a contact into a 911 call |
 | 4 | ⏳ Echo canceller | None heard so far, including the first trunk calls |
 | 5 | ⏳ Voicemail: test | **Current** |
 | 5 | ⏳ Exercise the 911 fallback against the test congestion | Sends real alerts if configured; plan it first |
-| 5 | ⏳ **E911 on the trunk**: register the address, call 933, then route 911 out the trunk | **Next**; `docs/QUICKSTART.md` 4d. Calls in/out done 2026-11-23 |
+| 5 | ✅ **E911 on the trunk**: address registered, test line read it back, 911 routed out the trunk | 2026-11-24; `docs/QUICKSTART.md` 4d |
 | 5 | ⏳ Trunk: idle inbound (15+ min, CGNAT mapping), menu DTMF, voicemail on ring-out | Test plan in `docs/QUICKSTART.md` 4e |
 | 5 | 💡 Ring the cell's real number over the trunk when home doesn't answer | Replaces a background softphone |
 | 4 | 💡 Open the DTMF capture at off-hook only | The VTech waits before sending pre-dialled digits; measure the gap first |

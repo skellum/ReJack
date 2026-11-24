@@ -47,9 +47,9 @@ it. Two alternatives were considered and rejected on purpose:
 **911 is owned by the line controller, not the switch.** 911 is always attempted and never silently blocked,
 and every 911 call notifies the emergency contacts. If the network or the server is down, the line stays open
 with a plain announcement that 911 was *not* reached, the call is recorded, and the contacts get a "call back
-now" alert with the recording. The test numbers (911/1911/9911) route to congestion, so the fallback can be
-exercised safely. It is covered by unit tests; the end-to-end run against the test congestion is next on the
-list.
+now" alert with the recording. Without a trunk, 911/1911/9911 route to congestion, so the fallback can be
+exercised safely; with one, they are real 911 calls. It is covered by unit tests; the end-to-end run
+against the test congestion is next on the list.
 
 **Production details, not demo details.**
 - systemd service as a non-root user, sandboxed (`NoNewPrivileges`, `ProtectSystem=strict`, one writable
@@ -82,7 +82,7 @@ list.
 | Line-down alert to the emergency contacts | ✅ Unit tested, deployed · ⏳ test with a real unplug |
 | 911 fallback (announcement, recording, alerts) | ✅ Unit tested · ⏳ end-to-end run next |
 | Voicemail on Asterisk, message waiting in softphones | ⏳ Configured, being tested |
-| Real phone number through a SIP trunk provider | ✅ Calls in and out, behind carrier-grade NAT · ⏳ E911 next |
+| Real phone number through a SIP trunk provider | ✅ Calls in and out, behind carrier-grade NAT · ✅ E911 address confirmed, 911 routed |
 | Caller ID (Bell 202 FSK), then hook flash, then message-waiting stutter dial tone | ⏳ After the trunk, in that order |
 
 ## How it works

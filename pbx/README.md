@@ -10,8 +10,8 @@ SIP provider trunk gives the house a real phone number. No phone number is neede
 | 102 | Linphone on a PC | home LAN |
 | 600 | Echo test (hear yourself) | — |
 | 601 | "Hello world" + reads back your extension | — |
-| 911 | **Test only**: congestion, so ReJack's 911 fallback runs. Not routed to the trunk until E911 is confirmed | — |
-| 933 | The trunk provider's 911 test line (reads back the registered address) | trunk |
+| 911 | With a trunk: a real 911 call, DID as caller ID; congestion if it fails, so ReJack's fallback runs. Without: test congestion only | trunk |
+| 933 | A 911 test line on some providers (reads back the registered address) | trunk |
 | 10 / 11 digits | Outside calls over the trunk, caller ID = the DID | trunk |
 
 ## Install

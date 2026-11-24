@@ -47,7 +47,10 @@ if [ -n "${TRUNK_HOST:-}" ]; then
   echo "trunk: $TRUNK_USER@$TRUNK_HOST:$TRUNK_PORT from local port $TRUNK_LOCAL_PORT ($TRUNK_PERMIT)"
 else
   echo "; no SIP trunk (TRUNK_HOST not set in pbx/secrets.env)" > "$tmp"
-  printf '; no SIP trunk (TRUNK_HOST not set in pbx/secrets.env)\n[from-trunk]\n[trunk-out]\n' > "$tmp2"
+  printf '%s\n' '; no SIP trunk (TRUNK_HOST not set in pbx/secrets.env)' '[from-trunk]' '[trunk-out]' \
+    '; 911 TEST ONLY without a trunk: congestion, so ReJack'"'"'s 911 fallback runs' '[emergency]' \
+    'exten => 911,1,NoOp(TEST 911 from ${CALLERID(num)} — no trunk, not a real emergency call)' \
+    ' same => n,Congestion(5)' > "$tmp2"
   echo "trunk: none"
 fi
 install -o asterisk -g asterisk -m 0640 "$tmp" "$ETC/pjsip_trunk.conf"
